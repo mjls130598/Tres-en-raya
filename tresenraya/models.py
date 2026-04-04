@@ -17,7 +17,7 @@ class Partida(models.Model):
     def matriz_tablero(self):
         """Reconstruye el estado del tablero (3x3) basado en los movimientos."""
         
-        tablero = [["[]" for _ in range(3)] for _ in range(3)]
+        tablero = [["" for _ in range(3)] for _ in range(3)]
         movimientos = self.movimientos.select_related('celda', 'jugador').all()
 
         for mov in movimientos:
