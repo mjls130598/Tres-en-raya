@@ -1,7 +1,6 @@
 import pytest
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APIClient
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
 
@@ -13,10 +12,6 @@ class TestRegistroViewIntegracion:
     Tests de integración para RegistroView.
     Simula peticiones HTTP reales al endpoint de registro.
     """
-
-    @pytest.fixture
-    def api_client(self):
-        return APIClient()
 
     @pytest.fixture
     def url_registro(self):
@@ -66,10 +61,6 @@ class TestLoginIntegracion:
     Tests de integración para el flujo de inicio de sesión y 
     obtención de tokens de autenticación.
     """
-
-    @pytest.fixture
-    def api_client(self):
-        return APIClient()
 
     @pytest.fixture
     def usuario_creado(self):
@@ -168,10 +159,6 @@ class TestCrearPartidaIntegracion:
     """Tests de flujo completo con persistencia en BBDD."""
 
     @pytest.fixture
-    def api_client(self):
-        return APIClient()
-
-    @pytest.fixture
     def setup_usuarios(self):
         user1 = User.objects.create_user(username="user1", password="pass")
         user2 = User.objects.create_user(username="user2", password="pass")
@@ -222,3 +209,67 @@ class TestCrearPartidaIntegracion:
         usernames_res = [response.data['jugador_x'], response.data['jugador_o']]
         assert "user1" in usernames_res
         assert "user2" in usernames_res
+
+@pytest.mark.django_db
+class TestListarPartidasIntegracion:
+    """Tests para asegurar que el filtrado en base de datos es preciso."""
+
+    @pytest.fixture
+    def setup_datos(self):
+        # Usuarios
+        me = User.objects.create_user(username="me", password="123")
+        friend = User.objects.create_user(username="friend", password="123")
+        stranger = User.objects.create_user(username="stranger", password="123")
+
+        # Partida 1: Mía contra Friend (Finalizada)
+        p1 = Partida.objects.create(finalizada=True)
+        Jugador.objects.create(usuario=me, partida=p1, simbolo="X")
+        Jugador.objects.create(usuario=friend, partida=p1, simbolo="O")
+
+        # Partida 2: Mía contra Stranger (En curso)
+        p2 = Partida.objects.create(finalizada=False)
+        Jugador.objects.create(usuario=me, partida=p2, simbolo="X")
+        Jugador.objects.create(usuario=stranger, partida=p2, simbolo="O")
+
+        # Partida 3: De otros (No debo verla)
+        p3 = Partida.objects.create(finalizada=True)
+        Jugador.objects.create(usuario=friend, partida=p3, simbolo="X")
+        Jugador.objects.create(usuario=stranger, partida=p3, simbolo="O")
+
+        return me, friend, stranger
+
+    def test_listar_solo_mis_partidas(self, api_client, setup_datos):
+        """Verifica que el usuario logueado no vea partidas de terceros."""
+
+        me, _, _ = setup_datos
+        api_client.force_authenticate(user=me)
+        
+        response = api_client.get(reverse('get_partidas'))
+        
+        assert response.status_code == status.HTTP_200_OK
+        # Debo ver 2 partidas (p1 y p2), no la p3.
+        assert len(response.data) == 2
+
+    def test_filtrar_por_finalizada(self, api_client, setup_datos):
+        """Verifica el filtro ?finalizada=true."""
+
+        me, _, _ = setup_datos
+        api_client.force_authenticate(user=me)
+        
+        response = api_client.get(reverse('get_partidas'), {'finalizada': 'true'})
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        # La partida devuelta debe ser la p1 (finalizada)
+
+    def test_filtrar_por_oponente(self, api_client, setup_datos):
+        """Verifica el filtro ?oponente=friend."""
+
+        me, friend, _ = setup_datos
+        api_client.force_authenticate(user=me)
+        
+        response = api_client.get(reverse('get_partidas'), {'oponente': 'friend'})
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        # Solo debe aparecer la partida donde participa 'friend'

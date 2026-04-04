@@ -1,7 +1,8 @@
 import pytest
 from rest_framework import status
 from unittest.mock import MagicMock, patch
-from tresenraya.views import CrearPartidaView, RegistroView
+from django.contrib.auth.models import User
+from tresenraya.views import CrearPartidaView, ListarPartidasView, RegistroView
 
 class TestRegistroViewUnitario:
     """
@@ -119,7 +120,7 @@ class TestCrearPartidaUnitario:
 
     def test_post_sin_nombre_oponente(self, view, request_mock):
         """Verifica el error 400 si no se envía el campo 'oponente'."""
-        
+
         request_mock.data = {}
         response = view.post(request_mock)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -146,3 +147,64 @@ class TestCrearPartidaUnitario:
         response = view.post(request_mock)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "No puedes jugar contra ti mismo" in response.data["Error"]
+
+class TestListarPartidasUnitario:
+
+    @pytest.fixture
+    def view(self):
+        return ListarPartidasView()
+
+    @pytest.fixture
+    def request_mock(self):
+        request = MagicMock()
+        request.user = MagicMock(spec=User)
+        request.user.id = 1
+        request.user.pk = 1
+        request.query_params = {}
+        return request
+
+    # Usamos patch en el Manager de Partida para evitar que toque la lógica de DB
+    @patch('tresenraya.models.Partida.objects.filter')
+    def test_get_error_parametro_finalizada_invalido(self, mock_filter, view, request_mock):
+        """Verifica el error 422 si 'finalizada' no es true o false."""
+
+        # Configuramos el mock para que devuelva otro mock (el queryset)
+        mock_filter.return_value = MagicMock()
+        request_mock.query_params = {'finalizada': 'talvez'}
+        
+        response = view.get(request_mock)
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.data["Error"] == "El parámetro 'finalizada' debe ser 'true' o 'false'"
+
+    @patch('tresenraya.models.Partida.objects.filter')
+    @patch('django.contrib.auth.models.User.objects.get')
+    def test_get_error_oponente_no_existe(self, mock_user_get, mock_filter, view, request_mock):
+        """Verifica el error 404 si el oponente filtrado no existe."""
+        
+        # Evitamos que la primera línea de la vista falle
+        mock_filter.return_value = MagicMock()
+        
+        # Configuramos el error del oponente
+        mock_user_get.side_effect = User.DoesNotExist
+        request_mock.query_params = {'oponente': 'fantasma'}
+        
+        response = view.get(request_mock)
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.data["Error"] == "El oponente dado no existe"
+
+    @patch('tresenraya.views.PartidaListadoSerializer')
+    @patch('tresenraya.views.Partida.objects.filter')
+    def test_get_llamada_correcta_sin_filtros(self, mock_filter, mock_serializer, view, request_mock):
+        """Verifica que se llame al filtro base por el usuario de la petición."""
+        
+        mock_qs = MagicMock()
+        mock_filter.return_value = mock_qs
+        mock_serializer.return_value.data = []
+
+        response = view.get(request_mock)
+
+        assert response.status_code == status.HTTP_200_OK
+        # Verifica que el primer filtro sea por el usuario autenticado
+        mock_filter.assert_called_once_with(jugador__usuario=request_mock.user)
