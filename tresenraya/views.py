@@ -89,7 +89,7 @@ class CrearPartidaView(APIView):
             tablero = nuevo_tablero,
             fila = fila,
             columna = columna
-            ) for columna in range(3)] for fila in range[3]]
+            ) for columna in range(3)] for fila in range(3)]
         
         return Response({
             "partida_id": nueva_partida.id,
