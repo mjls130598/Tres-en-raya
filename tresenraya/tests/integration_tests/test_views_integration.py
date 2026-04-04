@@ -84,6 +84,7 @@ class TestLoginIntegracion:
         Obtiene la URL del endpoint de login. 
         Asegúrate de que en urls.py tengas: path('login/', ..., name='login')
         """
+
         return reverse('login')
 
     def test_login_exitoso_genera_token(self, api_client, usuario_creado, url_login):
@@ -91,6 +92,7 @@ class TestLoginIntegracion:
         Verifica que un usuario con credenciales correctas recibe un token
         y un código de estado 200.
         """
+        
         payload = {
             "username": "jugador_pro",
             "password": "password_seguro_123"
@@ -111,6 +113,7 @@ class TestLoginIntegracion:
         Verifica que el sistema rechaza el acceso si la contraseña no coincide,
         devolviendo 400 o 401 según tu configuración.
         """
+
         payload = {
             "username": "jugador_pro",
             "password": "clave_erronea"
@@ -127,6 +130,7 @@ class TestLoginIntegracion:
         Verifica que el sistema no genera tokens para usuarios que no
         están registrados en la base de datos.
         """
+
         payload = {
             "username": "fantasma",
             "password": "password123"
@@ -142,6 +146,7 @@ class TestLoginIntegracion:
         Verifica que si un usuario ya tiene un token asignado, el login
         devuelve el mismo token en lugar de fallar o crear uno nuevo duplicado.
         """
+        
         # Creamos un token previo manualmente
         token_previo = Token.objects.create(user=usuario_creado)
 
