@@ -7,8 +7,18 @@ class Partida(models.Model):
     """Representa la sesión de juego y sus metadatos."""
 
     # Relaciones con USER
-    turno_actual = models.ForeignKey(User, related_name="turno_actual", on_delete=models.CASCADE)
-    ganador = models.ForeignKey(User, related_name="ganador", on_delete=models.CASCADE)
+    turno_actual = models.ForeignKey(
+        User,
+        related_name="turno_actual",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True)
+    ganador = models.ForeignKey(
+        User,
+        related_name="ganador",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True)
 
     finalizada = models.BooleanField(default=False)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
@@ -27,8 +37,8 @@ class Partida(models.Model):
         return tablero
 
 
-# Relación USER - PARTIDA: "JUGADORES"
-class Jugadores(models.Model):
+# Relación USER - PARTIDA: "JUGADOR"
+class Jugador(models.Model):
     """Vincula usuarios a una partida con un rol específico (X u O)."""
 
     usuario = models.ForeignKey(User, on_delete=models.CASCADE)
