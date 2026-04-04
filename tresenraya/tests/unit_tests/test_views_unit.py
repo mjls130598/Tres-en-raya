@@ -117,6 +117,78 @@ class TestCrearPartidaUnitario:
         request.user = MagicMock(username="usuario_logueado")
         request.data = {"oponente": "rival_test"}
         return request
+    
+    @patch('random.shuffle')
+    @patch('tresenraya.models.Celda.objects.create') 
+    @patch('tresenraya.models.Jugador.objects.create')
+    @patch('tresenraya.models.Tablero.objects.create')
+    @patch('tresenraya.models.Partida.objects.create')
+    @patch('django.contrib.auth.models.User.objects.get')
+    def test_post_creacion_partida_exitosa(
+        self, 
+        mock_user_get, 
+        mock_partida_create, 
+        mock_tablero_create, 
+        mock_jugador_create,
+        mock_celda_create,
+        mock_shuffle,
+        view, 
+        request_mock
+    ):
+        """
+        Verifica el flujo completo de creación:
+        1. Creación de objetos.
+        2. Mezcla aleatoria de jugadores.
+        3. Creación de las 9 celdas.
+        """
+        # --- Configuración de Mocks ---
+        # Mock del oponente
+        oponente_mock = MagicMock()
+        oponente_mock.username = "rival_test"
+        mock_user_get.return_value = oponente_mock
+
+        # Mock de la partida (debe tener un ID y un método save)
+        partida_instancia = MagicMock(id=1)
+        mock_partida_create.return_value = partida_instancia
+
+        # Mock de los jugadores creados
+        jugador1_mock = MagicMock()
+        jugador1_mock.usuario.username = "usuario_logueado"
+        jugador2_mock = MagicMock()
+        jugador2_mock.usuario.username = "rival_test"
+        mock_jugador_create.side_effect = [jugador1_mock, jugador2_mock]
+
+        # Forzamos el shuffle para que el primer jugador sea siempre el logueado
+        # y así el test sea determinista.
+        def mock_shuffle_logic(lista):
+            lista[0], lista[1] = request_mock.user, oponente_mock
+        mock_shuffle.side_effect = mock_shuffle_logic
+
+        # --- Ejecución ---
+        response = view.post(request_mock)
+
+        # --- Aserciones ---
+        assert response.status_code == status.HTTP_201_CREATED
+        
+        # 1. Verificar que se crearon los objetos base
+        mock_partida_create.assert_called_once()
+        mock_tablero_create.assert_called_once_with(partida=partida_instancia)
+        
+        # 2. Verificar que se crearon exactamente 2 jugadores
+        assert mock_jugador_create.call_count == 2
+        
+        # 3. Verificar la lógica de asignación de turno (jugador 0 tras el shuffle)
+        assert partida_instancia.turno_actual == request_mock.user
+        partida_instancia.save.assert_called()
+
+        # 4. Verificar la creación de la cuadrícula (3x3 = 9 celdas)
+        assert mock_celda_create.call_count == 9
+        
+        # 5. Verificar estructura de la respuesta
+        assert response.data["partida_id"] == 1
+        assert "jugador_x" in response.data
+        assert "jugador_o" in response.data
+        assert response.data["turno_actual"] == "usuario_logueado"
 
     def test_post_sin_nombre_oponente(self, view, request_mock):
         """Verifica el error 400 si no se envía el campo 'oponente'."""
@@ -148,7 +220,7 @@ class TestCrearPartidaUnitario:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "No puedes jugar contra ti mismo" in response.data["Error"]
 
-class TestListarPartidasUnitario:
+class TestListartresenrayaUnitario:
 
     @pytest.fixture
     def view(self):
@@ -193,6 +265,34 @@ class TestListarPartidasUnitario:
         
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.data["Error"] == "El oponente dado no existe"
+
+    @patch('django.contrib.auth.models.User.objects.get')
+    @patch('tresenraya.views.PartidaListadoSerializer')
+    @patch('tresenraya.models.Partida.objects.filter')
+    def test_get_llamada_correcta_con_filtros(self, mock_filter_base, mock_serializer, mock_user_get, view, request_mock):
+        """Verifica que se llame al filtro base por el usuario de la petición."""
+        
+        mock_qs_finalizada = MagicMock()
+        mock_qs_oponente = MagicMock()
+
+        mock_filter_base.return_value = mock_qs_finalizada
+        mock_qs_finalizada.filter.return_value = mock_qs_oponente
+        
+        oponente_mock = MagicMock()
+        mock_user_get.return_value = oponente_mock
+        mock_serializer.return_value.data = [{"id": 1}]
+
+        request_mock.query_params = {
+            'finalizada': 'true',
+            'oponente': 'usuario_rival'
+        }
+
+        response = view.get(request_mock)
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_filter_base.assert_called_once_with(jugador__usuario=request_mock.user)
+        mock_qs_finalizada.filter.assert_called_once_with(finalizada=True)
+        mock_qs_oponente.filter.assert_called_once_with(jugador__usuario=oponente_mock)
 
     @patch('tresenraya.views.PartidaListadoSerializer')
     @patch('tresenraya.views.Partida.objects.filter')
