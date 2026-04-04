@@ -5,6 +5,8 @@ from rest_framework.test import APIClient
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
 
+from tresenraya.models import Celda, Jugador, Partida, Tablero
+
 @pytest.mark.django_db
 class TestRegistroViewIntegracion:
     """
@@ -160,3 +162,63 @@ class TestLoginIntegracion:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["token"] == token_previo.key
         assert Token.objects.filter(user=usuario_creado).count() == 1
+
+@pytest.mark.django_db
+class TestCrearPartidaIntegracion:
+    """Tests de flujo completo con persistencia en BBDD."""
+
+    @pytest.fixture
+    def api_client(self):
+        return APIClient()
+
+    @pytest.fixture
+    def setup_usuarios(self):
+        user1 = User.objects.create_user(username="user1", password="pass")
+        user2 = User.objects.create_user(username="user2", password="pass")
+        return user1, user2
+
+    def test_creacion_partida_completa_exitosa(self, api_client, setup_usuarios):
+        """
+        Verifica que se crean correctamente todos los objetos relacionados:
+        1 Partida, 1 Tablero, 2 Jugadores y 9 Celdas.
+        """
+        user1, user2 = setup_usuarios
+        api_client.force_authenticate(user=user1)
+        url = reverse('nueva_partida') # Ajusta al nombre en tu urls.py
+
+        payload = {"oponente": "user2"}
+        response = api_client.post(url, payload, format='json')
+
+        # 1. Verificar Status 201
+        assert response.status_code == status.HTTP_201_CREATED
+        partida_id = response.data['partida_id']
+
+        # 2. Verificar Partida y Tablero
+        partida = Partida.objects.get(id=partida_id)
+        assert Tablero.objects.filter(partida=partida).exists()
+
+        # 3. Verificar Jugadores (X y O)
+        jugadores = Jugador.objects.filter(partida=partida)
+        assert jugadores.count() == 2
+        simbolos = [j.simbolo for j in jugadores]
+        assert "X" in simbolos
+        assert "O" in simbolos
+
+        # 4. Verificar Celdas (3x3 = 9)
+        tablero = Tablero.objects.get(partida=partida)
+        assert Celda.objects.filter(tablero=tablero).count() == 9
+
+        # 5. Verificar Turno Inicial
+        assert partida.turno_actual in [user1, user2]
+        assert response.data['turno_actual'] == partida.turno_actual.username
+
+    def test_creacion_partida_asigna_simbolos_correctos(self, api_client, setup_usuarios):
+        """Verifica que los usuarios en la respuesta coinciden con los creados."""
+        user1, user2 = setup_usuarios
+        api_client.force_authenticate(user=user1)
+        
+        response = api_client.post(reverse('nueva_partida'), {"oponente": "user2"})
+        
+        usernames_res = [response.data['jugador_x'], response.data['jugador_o']]
+        assert "user1" in usernames_res
+        assert "user2" in usernames_res

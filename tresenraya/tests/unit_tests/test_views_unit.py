@@ -1,7 +1,7 @@
 import pytest
 from rest_framework import status
 from unittest.mock import MagicMock, patch
-from tresenraya.views import RegistroView
+from tresenraya.views import CrearPartidaView, RegistroView
 
 class TestRegistroViewUnitario:
     """
@@ -102,3 +102,47 @@ class TestRegistroViewUnitario:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.data["token"] == "token_existente"
+
+class TestCrearPartidaUnitario:
+    """Tests de lógica pura sin tocar la base de datos."""
+
+    @pytest.fixture
+    def view(self):
+        return CrearPartidaView()
+
+    @pytest.fixture
+    def request_mock(self):
+        request = MagicMock()
+        request.user = MagicMock(username="usuario_logueado")
+        request.data = {"oponente": "rival_test"}
+        return request
+
+    def test_post_sin_nombre_oponente(self, view, request_mock):
+        """Verifica el error 400 si no se envía el campo 'oponente'."""
+        
+        request_mock.data = {}
+        response = view.post(request_mock)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Debes especificar un oponente" in response.data["Error"]
+
+    @patch('django.contrib.auth.models.User.objects.get')
+    def test_post_oponente_no_existe(self, mock_user_get, view, request_mock):
+        """Verifica el error 404 si el oponente no está registrado."""
+
+        from django.contrib.auth.models import User
+        mock_user_get.side_effect = User.DoesNotExist
+        
+        response = view.post(request_mock)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "El oponente dado no existe" in response.data["Error"]
+
+    @patch('django.contrib.auth.models.User.objects.get')
+    def test_post_jugar_contra_si_mismo(self, mock_user_get, view, request_mock):
+        """Verifica que el usuario no pueda retarse a sí mismo."""
+
+        user_mock = request_mock.user
+        mock_user_get.return_value = user_mock # El oponente es el mismo que el user
+
+        response = view.post(request_mock)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "No puedes jugar contra ti mismo" in response.data["Error"]
