@@ -11,6 +11,8 @@ from tresenraya.serializers import RegistroSerializer
 
 class RegistroView(APIView):
     """Registro de un nuevo usuario en el sistema"""
+    permission_classes = [permissions.AllowAny]
+    
     def post(self, request):
         serializer = RegistroSerializer(data=request.data)
 
