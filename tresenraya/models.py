@@ -18,10 +18,10 @@ class Partida(models.Model):
         """Reconstruye el estado del tablero (3x3) basado en los movimientos."""
         
         tablero = [["" for _ in range(3)] for _ in range(3)]
-        movimientos = self.movimientos.select_related('celda', 'jugador').all()
+        movimientos = self.movimiento_set.select_related('celda', 'jugador').all()
 
         for mov in movimientos:
-            jugador = self.jugadores.get(usuario=mov.jugador)
+            jugador = self.jugadores_set.get(usuario=mov.jugador)
             tablero[mov.celda.fila][mov.celda.columna] = jugador.simbolo
 
         return tablero
