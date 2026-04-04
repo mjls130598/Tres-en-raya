@@ -5,7 +5,7 @@ class RegistroSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'password', 'email']
-        extra_kwargs = {'password': {'write_only': True}} # La contraseña no se devuelve en el JSON 🔒
+        extra_kwargs = {'password': {'write_only': True}} # La contraseña no se devuelve en el JSON
 
     def create(self, validated_data):
         # Usamos create_user para que la contraseña se guarde encriptada
