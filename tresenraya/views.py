@@ -7,12 +7,12 @@ from rest_framework.authtoken.models import Token
 from rest_framework import permissions, status
 from tresenraya.models import Celda, Jugador, Partida, Tablero
 from django.contrib.auth.models import User
-from tresenraya.serializers import RegistroSerializer
+from tresenraya.serializers import PartidaListadoSerializer, RegistroSerializer
 
 class RegistroView(APIView):
     """Registro de un nuevo usuario en el sistema"""
     permission_classes = [permissions.AllowAny]
-    
+
     def post(self, request):
         serializer = RegistroSerializer(data=request.data)
 
@@ -34,8 +34,6 @@ class RegistroView(APIView):
 
 class CrearPartidaView(APIView):
     """Creación de una nueva partida"""
-
-    permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
 
@@ -99,3 +97,40 @@ class CrearPartidaView(APIView):
             "jugador_o": jugador2.usuario.username,
             "turno_actual": nueva_partida.turno_actual.username
         }, status=status.HTTP_201_CREATED)
+    
+
+class ListarPartidasView(APIView):
+    """Visualización de todas las partidas de un usuario (además del filtro por finalizada y por oponente)"""
+
+    def get(self, request):
+
+        # Filtramos por las partidas que participe el usuario de la petición
+        partidas_usuario = Partida.objects.filter(jugador__usuario=request.user)
+
+        # Si existe, filtramos por partidas finalizadas o no
+        finalizada_param = request.query_params.get('finalizada')
+        
+        if finalizada_param is not None:
+            finalizada_param = finalizada_param.lower()
+            print(finalizada_param)
+            if finalizada_param != "true" and finalizada_param != "false":
+                return Response({
+                    "Error": "El parámetro 'finalizada' debe ser 'true' o 'false'"
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            
+            es_finalizada = finalizada_param == 'true'
+            partidas_usuario = partidas_usuario.filter(finalizada = es_finalizada)
+
+        # Si existe, filtramos por oponente
+        oponente_param = request.query_params.get('oponente')
+        if oponente_param is not None:
+            try:
+                oponente = User.objects.get(username = oponente_param)
+            except User.DoesNotExist:
+                return Response(
+                    {"Error": "El oponente dado no existe"},
+                    status=status.HTTP_404_NOT_FOUND) 
+           
+            partidas_usuario = partidas_usuario.filter(jugador__usuario=oponente)
+
+        return Response(PartidaListadoSerializer(partidas_usuario, many=True).data)
