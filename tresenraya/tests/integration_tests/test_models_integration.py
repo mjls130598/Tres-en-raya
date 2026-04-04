@@ -10,6 +10,7 @@ class TestIntegracionModel:
     @pytest.fixture
     def setup_partida(self):
         """Configura el escenario inicial con usuarios, partida, jugadores y tablero 3x3."""
+
         u1 = User.objects.create_user(username="jugador1")
         u2 = User.objects.create_user(username="jugador2")
         
@@ -28,6 +29,7 @@ class TestIntegracionModel:
 
     def test_creacion_partida_y_jugadores(self, setup_partida):
         """Verifica la correcta instanciación de la partida y sus relaciones iniciales."""
+
         partida, u1, u2, _ = setup_partida
         assert Partida.objects.count() == 1
         assert Jugadores.objects.filter(partida=partida).count() == 2
@@ -35,12 +37,14 @@ class TestIntegracionModel:
 
     def test_unique_together_simbolo_partida(self, setup_partida):
         """Valida que no se puedan duplicar símbolos en una misma partida."""
+
         partida, u1, _, _ = setup_partida
         with pytest.raises(IntegrityError):
             Jugadores.objects.create(usuario=u1, partida=partida, simbolo="X")
 
     def test_movimiento_valido_y_matriz_tablero(self, setup_partida):
         """Comprueba que un movimiento registra correctamente el símbolo en la matriz del tablero."""
+
         partida, u1, _, celdas = setup_partida
         celda_centro = celdas[4]
         
@@ -53,6 +57,7 @@ class TestIntegracionModel:
 
     def test_error_turno_incorrecto(self, setup_partida):
         """Asegura que un jugador no pueda mover si no es su turno actual."""
+
         partida, _, u2, celdas = setup_partida
         mov = Movimiento(partida=partida, jugador=u2, celda=celdas[0])
         
@@ -61,6 +66,7 @@ class TestIntegracionModel:
 
     def test_error_celda_otra_partida(self, setup_partida):
         """Valida que no se permitan movimientos en celdas que pertenecen a otros tableros."""
+
         partida1, u1, _, _ = setup_partida
         
         u3 = User.objects.create_user(username="u3")
@@ -75,6 +81,7 @@ class TestIntegracionModel:
 
     def test_unique_together_celda_coordenadas(self, setup_partida):
         """Verifica la restricción de unicidad de coordenadas (fila, columna) por tablero."""
+        
         _, _, _, celdas = setup_partida
         tablero = celdas[0].tablero
         with pytest.raises(IntegrityError):
