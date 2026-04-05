@@ -206,6 +206,59 @@ class RealizarMovimientoView(APIView):
         
 
         return partida, jugador
+    
+    def _verificar_ganador(self, matriz) -> bool:
+        """
+        Comprobamos que el tablero actual tiene un ganador después de
+        realizar el movimiento.
+
+        Arguments:
+            matriz (array[array[str]]): El estado del tablero en ese momento
+
+        Returns:
+            hay_ganador (bool): Devuelve True si ya se ha encontrado un ganador
+        """
+
+        # 1. Comprobamos si hay alguna fila que esté completa con el mismo símbolo
+        if any(
+            fila[0] != "" and                        # Si la primera celda de una fila no está vacía
+            all(celda == fila[0] for celda in fila)  # Si todas las celdas de esa fila son iguales
+            for fila in matriz):
+            return True
+        
+        # 2. Verificamos si hay alguna columna que esté completa con el mismo símbolo
+        if any(
+            columna[0] != "" and                          # Si la primera celda de una columna no está vacía
+            all(celda == columna[0] for celda in columna) # Si todas las celdas de esa columna son iguales
+            for columna in zip(*matriz)):                 # (zip se utiliza para iterar por columnas en vez de filas)
+            return True
+        
+        # 3. Chequeamos que las diagonales del tablero estén completas con el mismo símbolo
+        tamano_matriz = len(matriz)
+
+        # Diagonal Principal
+        primera_celda = matriz[0][0]
+        if (
+            primera_celda != "" and            # Si la primera celda no está vacía
+            all(                               # Si todas las celdas en diagonal (de izq a derch)
+               matriz[i][i] == primera_celda   # son iguales
+               for i in range(tamano_matriz)
+            )
+        ):
+            return True
+        
+        # Diagonal Inversa
+        primera_celda_inversa = matriz[0][tamano_matriz - 1]
+        if (
+            primera_celda_inversa != "" and                                 # Si la primera celda no está vacía
+            all(                                                            # Si todas las celdas en diagonal     
+                matriz[i][tamano_matriz - 1 - i] == primera_celda_inversa   # (de derch a izq) son iguales
+                for i in range(tamano_matriz)
+            )
+        ):
+            return True
+        
+        return False
 
     def post(self, request):
 
@@ -240,3 +293,23 @@ class RealizarMovimientoView(APIView):
             jugador=request.user,
             celda=celda
         )
+
+        # 4. LÓGICA DEL JUEGO
+
+        # Comprobamos si ha habido algún ganador
+        matriz = partida.matriz_tablero
+        hay_ganador = self._verificar_ganador(matriz)
+
+        # Si hay un ganador, finalizamos jugada
+        if hay_ganador:
+            partida.finalizada = True
+            partida.ganador = request.user
+            partida.save()
+            return Response(
+                {
+                    "estado": "victoria",
+                    "ganador": request.user.username,
+                    "tablero": matriz
+                },
+                status=status.HTTP_200_OK
+            )
