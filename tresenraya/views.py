@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from rest_framework import permissions, status
+from django.db import transaction
 from tresenraya.models import Celda, Jugador, Movimiento, Partida, Tablero
 from django.contrib.auth.models import User
 from tresenraya.serializers import PartidaListadoSerializer, RegistroSerializer
@@ -202,7 +203,7 @@ class RealizarMovimientoView(APIView):
             )
         
         # Chequeamos que la celda está vacía
-        if Movimiento.objects.filter(partida, celda__fila=fila, celda__columna=columna).exists():
+        if Movimiento.objects.filter(partida=partida, celda__fila=fila, celda__columna=columna).exists():
             return Response(
                 {"Error": "Esa casilla ya está ocupada"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -284,8 +285,8 @@ class RealizarMovimientoView(APIView):
 
         # 1. OBTENCIÓN DE LOS DATOS RECIBIDOS
         partida_id = request.data.get('partida_id')
-        fila = request.data.get('fila')
-        columna = request.data.get('columna')
+        fila = int(request.data.get('fila'))
+        columna = int(request.data.get('columna'))
 
         # 2. VALIDACIONES
 
@@ -300,12 +301,19 @@ class RealizarMovimientoView(APIView):
         
         # 3. EJECUCIÓN DEL MOVIMIENTO
 
-        # Creación/obtención del tablero
-        tablero, _ = Tablero.objects.get_or_create(tablero=partida)
-
-        # Creación/obtención de la celda
-        celda, _ = Celda.objects.get_or_create(tablero=tablero, fila=fila,
-                                               columna=columna, valor=jugador.simbolo)
+        # Obtención de la celda
+        try:
+            celda = Celda.objects.get(tablero=partida.tablero, fila=fila,
+                                      columna=columna)
+        except Celda.DoesNotExist:
+            return Response(
+                {"Error": "Esa celda no existe en el tablero"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Modificamos la celda asignando el símbolo del jugador
+        celda.valor = jugador.simbolo
+        celda.save()
 
         # Guardamos registro de log
         Movimiento.objects.create(

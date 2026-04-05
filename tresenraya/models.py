@@ -31,7 +31,7 @@ class Partida(models.Model):
         movimientos = self.movimiento_set.select_related('celda', 'jugador').all()
 
         for mov in movimientos:
-            jugador = self.jugadores_set.get(usuario=mov.jugador)
+            jugador = self.jugador_set.get(usuario=mov.jugador)
             tablero[mov.celda.fila][mov.celda.columna] = jugador.simbolo
 
         return tablero
@@ -53,6 +53,21 @@ class Tablero(models.Model):
     """El contenedor físico de la partida."""
 
     partida = models.OneToOneField(Partida, on_delete=models.CASCADE, related_name="tablero")
+
+    def save(self, *args, **kwargs):
+        """Creación de todas las celdas del tablero"""
+
+        es_nuevo = self.pk is None
+        super().save(*args, **kwargs)
+
+        if es_nuevo:
+            # Creación de las nueve celdas
+            celdas_a_crear = [
+                Celda(tablero=self, fila=f, columna=c)
+                for f in range(3)
+                for c in range(3)
+            ]
+            Celda.objects.bulk_create(celdas_a_crear)
 
 # Entidad "CELDA"
 class Celda(models.Model):
