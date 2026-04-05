@@ -4,7 +4,7 @@ from rest_framework import status
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
 
-from tresenraya.models import Celda, Jugador, Partida, Tablero
+from tresenraya.models import Celda, Jugador, Movimiento, Partida, Tablero
 
 @pytest.mark.django_db
 class TestRegistroViewIntegracion:
@@ -272,4 +272,106 @@ class TestListarPartidasIntegracion:
         
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) == 1
-        # Solo debe aparecer la partida donde participa 'friend'
+
+@pytest.mark.django_db
+class TestRealizarMovimientoView:
+
+    @pytest.fixture
+    def setup_juego(self, api_client):
+        """Configura el entorno de prueba con usuarios, partida, tablero y el cliente API."""
+        u1 = User.objects.create_user(username="jugador1", password="pass123")
+        u2 = User.objects.create_user(username="jugador2", password="pass123")
+        
+        partida = Partida.objects.create(turno_actual=u1)
+        Jugador.objects.create(usuario=u1, partida=partida, simbolo="X")
+        Jugador.objects.create(usuario=u2, partida=partida, simbolo="O")
+        Tablero.objects.create(partida=partida)
+        
+        url = reverse('jugada')
+        
+        return api_client, partida, u1, u2, url
+
+    # --- TESTS DE VALIDACIÓN ---
+
+    def test_error_partida_no_existe(self, setup_juego):
+        """Prueba que la API devuelva 404 si el ID de la partida no se encuentra en la base de datos."""
+        client, _, u1, _, url = setup_juego
+        client.force_authenticate(user=u1)
+        
+        response = client.post(url, {'partida_id': 999, 'fila': 0, 'columna': 0})
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.data['Error'] == "La partida dada no existe"
+
+    def test_error_no_es_tu_turno(self, setup_juego):
+        """Verifica que un jugador no pueda realizar un movimiento si el turno_actual de la partida pertenece al contrincante."""
+        client, partida, _, u2, url = setup_juego
+        client.force_authenticate(user=u2) # El turno inicial es de u1
+        
+        data = {'partida_id': partida.id, 'fila': 0, 'columna': 0}
+        response = client.post(url, data)
+        
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data['Error'] == "No es tu turno"
+
+    def test_error_casilla_ya_ocupada(self, setup_juego):
+        """Valida que no se pueda marcar una celda que ya tiene un movimiento registrado previamente."""
+        client, partida, u1, _, url = setup_juego
+        client.force_authenticate(user=u1)
+        
+        celda = Celda.objects.get(tablero=partida.tablero, fila=0, columna=0)
+        Movimiento.objects.create(partida=partida, jugador=u1, celda=celda)
+        
+        response = client.post(url, {'partida_id': partida.id, 'fila': 0, 'columna': 0})
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data['Error'] == "Esa casilla ya está ocupada"
+
+    # --- TESTS DE LÓGICA DE JUEGO ---
+
+    def test_movimiento_exitoso_y_cambio_turno(self, setup_juego):
+        """Comprueba que tras un movimiento válido se crea el registro de Movimiento y el turno de la partida rota al siguiente jugador."""
+        client, partida, u1, u2, url = setup_juego
+        client.force_authenticate(user=u1)
+        
+        data = {'partida_id': partida.id, 'fila': 1, 'columna': 1}
+        response = client.post(url, data)
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['estado'] == "jugando"
+        
+        partida.refresh_from_db()
+        assert partida.turno_actual == u2
+        assert Movimiento.objects.filter(partida=partida, jugador=u1).exists()
+
+    def test_victoria_diagonal(self, setup_juego):
+        """Verifica que el sistema detecta una línea diagonal completa, marca la partida como finalizada y asigna correctamente al ganador."""
+        client, partida, u1, _, url = setup_juego
+        tablero = partida.tablero
+        
+        # Preparamos 2 marcas en la diagonal principal para u1 (X)
+        Movimiento.objects.create(partida=partida, jugador=u1, 
+                                 celda=Celda.objects.get(tablero=tablero, fila=0, columna=0))
+        Movimiento.objects.create(partida=partida, jugador=u1, 
+                                 celda=Celda.objects.get(tablero=tablero, fila=1, columna=1))
+        
+        client.force_authenticate(user=u1)
+        # Tercer movimiento para completar la diagonal
+        response = client.post(url, {'partida_id': partida.id, 'fila': 2, 'columna': 2})
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['estado'] == "victoria"
+        
+        partida.refresh_from_db()
+        assert partida.finalizada is True
+        assert partida.ganador == u1
+
+    def test_error_coordenadas_fuera_rango(self, setup_juego):
+        """Asegura que el sistema rechace movimientos con filas o columnas menores a 0 o mayores a 2."""
+        client, partida, u1, _, url = setup_juego
+        client.force_authenticate(user=u1)
+        
+        response = client.post(url, {'partida_id': partida.id, 'fila': 3, 'columna': 0})
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data['Error'] == "Coordenadas fuera del tablero"
