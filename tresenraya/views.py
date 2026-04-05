@@ -61,43 +61,47 @@ class CrearPartidaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 2. Crear objetos de Partida y Tablero en la BBDD
-        nueva_partida = Partida.objects.create()
-        nuevo_tablero = Tablero.objects.create(partida = nueva_partida)
+        try:
+            # Creación de la partida dentro de una transacción
+            # Para asegurar de que se guarda todo o nada
+            with transaction.atomic():
 
-        # 3. Creación de jugadores
-        jugadores = [request.user, oponente]
-        random.shuffle(jugadores)
+                # 2. Crear objetos de Partida y Tablero en la BBDD
+                nueva_partida = Partida.objects.create()
+                nuevo_tablero = Tablero.objects.create(partida = nueva_partida)
 
-        jugador1 = Jugador.objects.create(
-            usuario = jugadores[0],
-            partida = nueva_partida,
-            simbolo = "X"
-        )
+                # 3. Creación de jugadores
+                jugadores = [request.user, oponente]
+                random.shuffle(jugadores)
 
-        jugador2 = Jugador.objects.create(
-            usuario = jugadores[1],
-            partida = nueva_partida,
-            simbolo = "O"
-        )
+                jugador1 = Jugador.objects.create(
+                    usuario = jugadores[0],
+                    partida = nueva_partida,
+                    simbolo = "X"
+                )
 
-        # Asignamos el turno al jugador1
-        nueva_partida.turno_actual = jugadores[0]
-        nueva_partida.save()
+                jugador2 = Jugador.objects.create(
+                    usuario = jugadores[1],
+                    partida = nueva_partida,
+                    simbolo = "O"
+                )
 
-        # 4. Creación del contenido del Tablero
-        [[Celda.objects.create(
-            tablero = nuevo_tablero,
-            fila = fila,
-            columna = columna
-            ) for columna in range(3)] for fila in range(3)]
-        
-        return Response({
-            "partida_id": nueva_partida.id,
-            "jugador_x": jugador1.usuario.username,
-            "jugador_o": jugador2.usuario.username,
-            "turno_actual": nueva_partida.turno_actual.username
-        }, status=status.HTTP_201_CREATED)
+                # Asignamos el turno al jugador1
+                nueva_partida.turno_actual = jugadores[0]
+                nueva_partida.save()
+                
+                return Response({
+                    "partida_id": nueva_partida.id,
+                    "jugador_x": jugador1.usuario.username,
+                    "jugador_o": jugador2.usuario.username,
+                    "turno_actual": nueva_partida.turno_actual.username
+                }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {"Error": "No se pudo crear la partida"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
 
 class ListarPartidasView(APIView):
