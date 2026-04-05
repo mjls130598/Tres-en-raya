@@ -140,7 +140,7 @@ class ListarPartidasView(APIView):
 class RealizarMovimientoView(APIView):
     """Realización de los movimientos dentro de una partida"""
 
-    def _validaciones_datos(self, partida_id, usuario, fila, columna):
+    def _validaciones_datos(self, partida_id:int, usuario: User, fila: int, columna:int):
         """
         Validamos los datos recibidos antes de realizar cualquier movimiento en el tablero.
         Si todos los datos son correctos, se devuelve la partida y el jugador que
@@ -259,6 +259,22 @@ class RealizarMovimientoView(APIView):
             return True
         
         return False
+    
+    def _cambiar_turno(self, partida: Partida):
+        """
+        Actualizamos la partida cambiando el turno
+
+        Arguments:
+            partida (Partida): La partida con su estado actual
+        """
+
+        # Buscamos el otro jugador
+        jugador_actual = partida.turno_actual
+        siguiente_jugador = Jugador.objects.filter(partida=partida).exclude(usuario=jugador_actual).first()
+
+        # Actualizamos la partida
+        partida.turno_actual = siguiente_jugador.usuario
+        partida.save()
 
     def post(self, request):
 
@@ -313,3 +329,16 @@ class RealizarMovimientoView(APIView):
                 },
                 status=status.HTTP_200_OK
             )
+        
+        # Si se puede continuar la partida, actualizamos turnos
+
+        self._cambiar_turno(partida)
+        
+        return Response(
+            {
+                "estado": "jugando",
+                "turno_actual": partida.turno_actual.username,
+                "tablero": matriz
+            },
+            status=status.HTTP_200_OK
+        )
