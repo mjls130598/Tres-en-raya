@@ -616,23 +616,23 @@ class TestRealizarMovimientoUnitario:
         assert view._verificar_empate(matriz_columna) is False
 
     def test_verificar_empate_diagonal_principal(self, view):
-        """erifica que no se detecte el empate en la diagonal principal"""
+        """Verifica que no se detecte el empate en la diagonal principal"""
 
         matriz_diagonal_principal = [
             ["X", "O", "O"],
             ["O", "", "X"],
-            ["O", "", "X"]
+            ["O", "X", "X"]
         ]
         
         assert view._verificar_empate(matriz_diagonal_principal) is False
 
     def test_verificar_empate_diagonal_inversa(self, view):
-        """erifica que no se detecte el empate en la diagonal inversa"""
+        """Verifica que no se detecte el empate en la diagonal inversa"""
 
         matriz_diagonal_inversa = [
             ["O", "X", "O"],
-            ["O", "", "X"],
-            ["O", "", "X"]
+            ["X", "", "O"],
+            ["O", "O", "X"]
         ]
         
         assert view._verificar_empate(matriz_diagonal_inversa) is False
@@ -646,6 +646,16 @@ class TestRealizarMovimientoUnitario:
             ["O", "X", "O"]
         ]
         assert view._verificar_empate(matriz_llena) is True
+
+    def test_verificar_empate_bloqueo(self, view):
+        """Verifica que la primera condición de la función (tablero lleno) devuelva True inmediatamente."""
+
+        matriz_bloqueada = [
+            ["X", "O", "X"],
+            ["X", "", "O"],
+            ["O", "X", "O"]
+        ]
+        assert view._verificar_empate(matriz_bloqueada) is True
 
     # --- TESTS DE _cambiar_turno ---
 
