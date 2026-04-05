@@ -208,7 +208,6 @@ class RealizarMovimientoView(APIView):
                 {"Error": "Esa casilla ya está ocupada"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
 
         return partida, jugador
     
