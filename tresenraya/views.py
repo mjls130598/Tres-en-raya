@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from rest_framework import permissions, status
-from tresenraya.models import Celda, Jugador, Partida, Tablero
+from tresenraya.models import Celda, Jugador, Movimiento, Partida, Tablero
 from django.contrib.auth.models import User
 from tresenraya.serializers import PartidaListadoSerializer, RegistroSerializer
 
@@ -31,6 +31,7 @@ class RegistroView(APIView):
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class CrearPartidaView(APIView):
     """Creación de una nueva partida"""
@@ -134,3 +135,100 @@ class ListarPartidasView(APIView):
             partidas_usuario = partidas_usuario.filter(jugador__usuario=oponente)
 
         return Response(PartidaListadoSerializer(partidas_usuario, many=True).data)
+
+
+class RealizarMovimientoView(APIView):
+    """Realización de los movimientos dentro de una partida"""
+
+    def _validaciones_datos(self, partida_id, usuario, fila, columna):
+        """
+        Validamos los datos recibidos antes de realizar cualquier movimiento en el tablero.
+        Si todos los datos son correctos, se devuelve la partida y el jugador que
+        realiza el movimiento
+
+        Arguments:
+            partida_id (int): El id de la partida
+            usuario (User): El usuario que quiere realizar el movimiento
+            fila, columna (int): Las coordenadas del movimiento
+
+        
+        Returns:
+            partida (Partida): La partida completa
+            jugador (Jugador): El jugador de esa partida
+        """
+
+        # Obtenemos la partida
+        try:
+            partida = Partida.objects.get(id=partida_id)
+        except Partida.DoesNotExist:
+            return Response(
+                {"Error": "La partida dada no existe"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Verificamos que la partida no esté terminada
+        if partida.finalizada:
+            return Response(
+                {"Error": "La partida dada ya ha finalizado"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Comprobamos que el usuario forma parte de la partida
+        try:
+            jugador = Jugador.objects.get(partida=partida, usuario=usuario)
+        except Jugador.DoesNotExist:
+            return Response(
+                {"Error": "No formas parte de esta partida"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Comprobamos que el usuario es el que tiene el turno
+        if partida.turno_actual != usuario:
+            return Response(
+                {"Error": "No es tu turno"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Verificamos que la fila y la columna esté dentro del tablero
+        if not(0 <= fila <= 2 and 0 <= columna <= 2):
+            return Response(
+                {"Error": "Coordenadas fuera del tablero"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Chequeamos que la celda está vacía
+        if Movimiento.objects.filter(partida, celda__fila=fila, celda__columna=columna).exists():
+            return Response(
+                {"Error": "Esa casilla ya está ocupada"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+
+        return partida, jugador
+
+    def post(self, request):
+
+        # 1. OBTENCIÓN DE LOS DATOS RECIBIDOS
+        partida_id = request.data.get('partida_id')
+        fila = request.data.get('fila')
+        columna = request.data.get('columna')
+
+        # 2. VALIDACIONES
+
+        partida, jugador = self._validaciones_datos(partida_id, request.user, fila, columna)
+        
+        # 3. EJECUCIÓN DEL MOVIMIENTO
+
+        # Creación/obtención del tablero
+        tablero, _ = Tablero.objects.get_or_create(tablero=partida)
+
+        # Creación/obtención de la celda
+        celda, _ = Celda.objects.get_or_create(tablero=tablero, fila=fila,
+                                               columna=columna, valor=jugador.simbolo)
+
+        # Guardamos registro de log
+        movimiento = Movimiento.objects.create(
+            partida=partida,
+            jugador=request.user,
+            celda=celda
+        )
