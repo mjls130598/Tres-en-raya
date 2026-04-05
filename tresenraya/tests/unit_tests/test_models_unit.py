@@ -7,36 +7,38 @@ from django.contrib.auth.models import User
 class TestPartida:
     """Tests unitarios del método 'matriz_tablero'"""
 
-    def test_matriz_tablero_reconstruccion_correcta(mocker):
-        """Prueba que el tablero se genere correctamente con los movimientos indicados."""
+    def test_matriz_tablero_reconstruccion_correcta(self):
+        """Verifica que el tablero 3x3 se reconstruya fielmente basándose en los movimientos y símbolos de los jugadores."""
 
         # 1. Mock de la instancia de Partida
         partida = MagicMock()
         
-        # 2. Mock de los Jugadores
+        # 2. Mock de los Jugadores y sus símbolos
         jugador_x = MagicMock(simbolo="X")
         jugador_o = MagicMock(simbolo="O")
 
-        # Simulamos el comportamiento de self.jugadores_set.get
-        def side_effect_jugadores(usuario):
+        # El código busca: jugador_set.get(usuario=mov.jugador)
+        # Debemos manejar el argumento nominal 'usuario'
+        def side_effect_jugadores(**kwargs):
+            usuario = kwargs.get('usuario')
             if usuario == "user_x":
                 return jugador_x
             return jugador_o
 
-        # IMPORTANTE: Usamos jugadores_set para coincidir con el modelo
-        partida.jugadores_set.get.side_effect = side_effect_jugadores
+        partida.jugador_set.get.side_effect = side_effect_jugadores
 
         # 3. Mock de los Movimientos
+        # Cada movimiento debe tener una celda con fila/columna y un usuario asociado
         mov1 = MagicMock(celda=MagicMock(fila=0, columna=0), jugador="user_x")
         mov2 = MagicMock(celda=MagicMock(fila=1, columna=1), jugador="user_o")
         mov3 = MagicMock(celda=MagicMock(fila=2, columna=2), jugador="user_x")
 
-        # IMPORTANTE: Mockeamos el encadenamiento sobre movimiento_set
+        # Mockeamos el encadenamiento: movimiento_set.select_related(...).all()
         movimientos_mock = [mov1, mov2, mov3]
         partida.movimiento_set.select_related.return_value.all.return_value = movimientos_mock
 
         # 4. Ejecución
-        # Llamamos a la property a través de la clase pasando el mock como 'self'
+        # Accedemos a la property. Al ser un mock, usamos fget para invocar la lógica real
         resultado = Partida.matriz_tablero.fget(partida)
 
         # 5. Verificación
@@ -48,18 +50,25 @@ class TestPartida:
         
         assert resultado == tablero_esperado
         assert len(resultado) == 3
-        assert len(resultado[0]) == 3
+        assert resultado[0][0] == "X"
+        assert resultado[1][1] == "O"
 
-    def test_matriz_tablero_vacia(mocker):
-        """Prueba que el tablero se genere vacío si no hay movimientos."""
+    def test_matriz_tablero_vacia(self):
+        """Verifica que si no existen movimientos grabados, se devuelva una matriz de 3x3 rellena de strings vacíos."""
 
         partida = MagicMock()
-        partida.movimientos.select_related.return_value.all.return_value = []
         
-        resultado = Partida.matriz_tablero.__get__(partida)
+        # Simulamos que no hay movimientos (lista vacía)
+        partida.movimiento_set.select_related.return_value.all.return_value = []
         
-        tablero_vacio = [["" for _ in range(3)] for _ in range(3)]
+        # Ejecución
+        resultado = Partida.matriz_tablero.fget(partida)
+        
+        # Verificación
+        tablero_vacio = [["", "", ""], ["", "", ""], ["", "", ""]]
         assert resultado == tablero_vacio
+        # Aseguramos que todas las celdas sean strings vacíos
+        assert all(celda == "" for fila in resultado for celda in fila)
 
 class TestMovimiento:
     """Tests unitarios del método 'clean'"""
