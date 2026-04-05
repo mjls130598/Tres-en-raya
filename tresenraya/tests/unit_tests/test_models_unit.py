@@ -1,8 +1,7 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import pytest
 from django.core.exceptions import ValidationError
-from tresenraya.models import Celda, Movimiento, Partida
-from django.contrib.auth.models import User
+from tresenraya.models import Celda, Movimiento, Partida, Tablero
 
 class TestPartida:
     """Tests unitarios del método 'matriz_tablero'"""
@@ -69,6 +68,89 @@ class TestPartida:
         assert resultado == tablero_vacio
         # Aseguramos que todas las celdas sean strings vacíos
         assert all(celda == "" for fila in resultado for celda in fila)
+
+class TestTablero:
+
+    @pytest.fixture
+    def partida_mock(self):
+        """Fixture para obtener una instancia de Partida mockeada con pk."""
+        partida = MagicMock(spec=Partida)
+        partida.pk = 1
+        # Añadimos el atributo _state para que Django no se queje si se accede a él
+        partida._state = MagicMock()
+        return partida
+
+    @patch('tresenraya.models.Celda.objects.bulk_create')
+    @patch('django.db.models.Model.save')
+    def test_save_nuevo_tablero_crea_nueve_celdas(self, mock_super_save, mock_bulk_create, partida_mock):
+        """Verifica que al guardar un tablero por primera vez (pk es None), se dispare la creación masiva de las 9 celdas."""
+
+        # En lugar de Tablero(partida=partida_mock), lo hacemos por partes
+        # para evitar que el descriptor de Django valide el objeto mock
+        tablero = Tablero()
+        tablero.partida = partida_mock
+        tablero.pk = None 
+
+        # Ejecución
+        tablero.save()
+
+        # Verificaciones
+        mock_super_save.assert_called_once()
+        mock_bulk_create.assert_called_once()
+        
+        celdas_creadas = mock_bulk_create.call_args[0][0]
+        assert len(celdas_creadas) == 9
+        
+        coords = [(c.fila, c.columna) for c in celdas_creadas]
+        for f in range(3):
+            for c in range(3):
+                assert (f, c) in coords
+
+    @patch('tresenraya.models.Celda.objects.bulk_create')
+    @patch('django.db.models.Model.save')
+    def test_save_tablero_existente_no_crea_celdas(self, mock_super_save, mock_bulk_create, partida_mock):
+        """Verifica que al actualizar un tablero que ya existe (pk ya asignado), no se vuelvan a crear las celdas."""
+
+        tablero = Tablero()
+        tablero.partida = partida_mock
+        tablero.pk = 1 
+
+        # Ejecución
+        tablero.save()
+
+        # Verificaciones
+        mock_super_save.assert_called_once()
+        mock_bulk_create.assert_not_called()
+
+    @patch('tresenraya.models.Celda.objects.bulk_create')
+    @patch('django.db.models.Model.save')
+    def test_save_pasa_argumentos_a_super(self, mock_super_save, mock_bulk_create, partida_mock):
+        """Verifica que el método save respete y reenvíe los argumentos (*args, **kwargs) a la implementación original de Django."""
+
+        tablero = Tablero()
+        tablero.partida = partida_mock
+        
+        # Ejecución
+        tablero.save(force_insert=True, update_fields=['partida'])
+
+        # Verificación
+        mock_super_save.assert_called_once_with(force_insert=True, update_fields=['partida'])
+
+    @patch('tresenraya.models.Celda.objects.bulk_create')
+    @patch('django.db.models.Model.save')
+    def test_celdas_asignadas_al_tablero_correcto(self, mock_super_save, mock_bulk_create, partida_mock):
+        """Verifica que las celdas instanciadas tengan como referencia el objeto tablero actual (self)."""
+
+        tablero = Tablero()
+        tablero.partida = partida_mock
+        tablero.pk = None
+        
+        tablero.save()
+
+        celdas_creadas = mock_bulk_create.call_args[0][0]
+        
+        for celda in celdas_creadas:
+            assert celda.tablero == tablero
 
 class TestMovimiento:
     """Tests unitarios del método 'clean'"""
