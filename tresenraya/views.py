@@ -153,8 +153,9 @@ class RealizarMovimientoView(APIView):
 
         
         Returns:
-            partida (Partida): La partida completa
-            jugador (Jugador): El jugador de esa partida
+            respuesta (Response): La respuesta con el error encontrado
+            partida   (Partida) : La partida completa
+            jugador   (Jugador) : El jugador de esa partida
         """
 
         # Obtenemos la partida
@@ -215,7 +216,14 @@ class RealizarMovimientoView(APIView):
 
         # 2. VALIDACIONES
 
-        partida, jugador = self._validaciones_datos(partida_id, request.user, fila, columna)
+        validacion = self._validaciones_datos(partida_id, request.user, fila, columna)
+
+        # Si devuelve un Response del error, se devuelve al usuario
+        if isinstance(validacion, Response):
+            return validacion
+        
+        # Sino, se recoge la partida y el jugador
+        partida, jugador = validacion
         
         # 3. EJECUCIÓN DEL MOVIMIENTO
 
@@ -227,7 +235,7 @@ class RealizarMovimientoView(APIView):
                                                columna=columna, valor=jugador.simbolo)
 
         # Guardamos registro de log
-        movimiento = Movimiento.objects.create(
+        Movimiento.objects.create(
             partida=partida,
             jugador=request.user,
             celda=celda
