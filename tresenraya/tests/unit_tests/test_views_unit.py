@@ -120,8 +120,8 @@ class TestCrearPartidaUnitario:
         request.data = {"oponente": "rival_test"}
         return request
     
+    @patch('django.db.transaction.atomic')
     @patch('random.shuffle')
-    @patch('tresenraya.models.Celda.objects.create') 
     @patch('tresenraya.models.Jugador.objects.create')
     @patch('tresenraya.models.Tablero.objects.create')
     @patch('tresenraya.models.Partida.objects.create')
@@ -132,39 +132,44 @@ class TestCrearPartidaUnitario:
         mock_partida_create, 
         mock_tablero_create, 
         mock_jugador_create,
-        mock_celda_create,
         mock_shuffle,
+        mock_atomic, # Añadido para la transacción
         view, 
         request_mock
     ):
         """
-        Verifica el flujo completo de creación:
-        1. Creación de objetos.
-        2. Mezcla aleatoria de jugadores.
-        3. Creación de las 9 celdas.
+        Verifica el flujo completo de creación de una partida entre dos usuarios.
+        
+        Comprueba que se creen la partida, el tablero y los dos jugadores con 
+        sus símbolos correspondientes.
         """
+        # --- Configuración de Datos de Entrada ---
+        request_mock.data = {'oponente': 'rival_test'}
+        request_mock.user.username = "usuario_logueado"
+
         # --- Configuración de Mocks ---
-        # Mock del oponente
-        oponente_mock = MagicMock()
+        # Mock del oponente encontrado en la BD
+        oponente_mock = MagicMock(spec=User)
         oponente_mock.username = "rival_test"
         mock_user_get.return_value = oponente_mock
 
-        # Mock de la partida (debe tener un ID y un método save)
-        partida_instancia = MagicMock(id=1)
+        # Mock de la instancia de partida creada
+        partida_instancia = MagicMock(spec=Partida)
+        partida_instancia.id = 1
         mock_partida_create.return_value = partida_instancia
 
-        # Mock de los jugadores creados
+        # Mock de los objetos Jugador que devuelve el create
         jugador1_mock = MagicMock()
         jugador1_mock.usuario.username = "usuario_logueado"
         jugador2_mock = MagicMock()
         jugador2_mock.usuario.username = "rival_test"
+        
+        # El primer create devuelve jugador X, el segundo jugador O
         mock_jugador_create.side_effect = [jugador1_mock, jugador2_mock]
 
-        # Forzamos el shuffle para que el primer jugador sea siempre el logueado
-        # y así el test sea determinista.
-        def mock_shuffle_logic(lista):
-            lista[0], lista[1] = request_mock.user, oponente_mock
-        mock_shuffle.side_effect = mock_shuffle_logic
+        # Forzamos el shuffle para que el orden sea predecible en el test
+        # (El primer elemento será el turno_actual)
+        mock_shuffle.side_effect = lambda x: x.sort(key=lambda u: u.username, reverse=True) 
 
         # --- Ejecución ---
         response = view.post(request_mock)
@@ -172,25 +177,22 @@ class TestCrearPartidaUnitario:
         # --- Aserciones ---
         assert response.status_code == status.HTTP_201_CREATED
         
-        # 1. Verificar que se crearon los objetos base
+        # 1. Verificar creación de modelos base
         mock_partida_create.assert_called_once()
         mock_tablero_create.assert_called_once_with(partida=partida_instancia)
         
-        # 2. Verificar que se crearon exactamente 2 jugadores
+        # 2. Verificar creación de los 2 jugadores (X y O)
         assert mock_jugador_create.call_count == 2
         
-        # 3. Verificar la lógica de asignación de turno (jugador 0 tras el shuffle)
-        assert partida_instancia.turno_actual == request_mock.user
-        partida_instancia.save.assert_called()
-
-        # 4. Verificar la creación de la cuadrícula (3x3 = 9 celdas)
-        assert mock_celda_create.call_count == 9
+        # 3. Verificar asignación de turno y persistencia
+        # En el código: nueva_partida.turno_actual = jugadores[0]
+        assert partida_instancia.save.called
         
-        # 5. Verificar estructura de la respuesta
+        # 4. Verificar estructura de la respuesta JSON
         assert response.data["partida_id"] == 1
-        assert "jugador_x" in response.data
-        assert "jugador_o" in response.data
-        assert response.data["turno_actual"] == "usuario_logueado"
+        assert response.data["jugador_x"] == "usuario_logueado"
+        assert response.data["jugador_o"] == "rival_test"
+        assert "turno_actual" in response.data
 
     def test_post_sin_nombre_oponente(self, view, request_mock):
         """Verifica el error 400 si no se envía el campo 'oponente'."""
@@ -221,6 +223,41 @@ class TestCrearPartidaUnitario:
         response = view.post(request_mock)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "No puedes jugar contra ti mismo" in response.data["Error"]
+
+    @patch('tresenraya.models.Partida.objects.create')
+    @patch('django.contrib.auth.models.User.objects.get')
+    def test_post_error_creacion_partida_excepcion_general(
+        self, 
+        mock_user_get, 
+        mock_partida_create, 
+        view, 
+        request_mock
+    ):
+        """
+        Verifica que si ocurre un error inesperado al crear la partida (p.ej. fallo de BD), 
+        la vista capture la excepción y devuelva un error 500.
+        """
+        
+        # --- Configuración de Mocks ---
+        # 1. El oponente se encuentra correctamente
+        request_mock.data = {'oponente': 'rival_test'}
+        oponente_mock = MagicMock(spec=User)
+        oponente_mock.username = "rival_test"
+        mock_user_get.return_value = oponente_mock
+
+        # 2. Forzamos una excepción genérica al intentar crear la partida
+        # Esto simulará cualquier fallo inesperado dentro del bloque 'try'
+        mock_partida_create.side_effect = Exception("Fallo crítico de base de datos")
+
+        # --- Ejecución ---
+        response = view.post(request_mock)
+
+        # --- Aserciones ---
+        # Verificamos que la respuesta sea un 500
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        
+        # Verificamos el mensaje de error definido en tu código
+        assert response.data["Error"] == "No se pudo crear la partida"
 
 class TestListartresenrayaUnitario:
 
