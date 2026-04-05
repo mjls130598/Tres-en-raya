@@ -265,6 +265,49 @@ class RealizarMovimientoView(APIView):
         
         return False
     
+    def _verificar_empate(self, matriz) -> bool:
+        """
+        Comprobamos que la partida actual haya ocurrido un empate
+
+        Arguments:
+            matriz (array[array[str]]): El estado del tablero en ese momento
+
+        Returns:
+            hay_empate (bool): Devuelve True si ya no se puede continuar jugando
+        """
+
+        def _obtener_lineas():
+            """
+            Genera todas las líneas que se pueden realizar el tres en raya
+            (3 filas, 3 columnas, 2 diagonales) con el tablero actual
+            """
+            tamano_matriz = len(matriz)
+
+            # Obtener todas las filas de la matriz
+            for fila in matriz:
+                yield fila      # Envía al for fila por fila
+
+            # Obtener todas las columnas de la matriz
+            for columna in zip(*matriz):
+                yield columna
+
+            # Obtener la diagonal principal
+            yield [matriz[i][i] for i in range(tamano_matriz)]
+
+            # Obtener la diagonal inversa
+            yield [matriz[i][tamano_matriz - 1 - i] for i in range(tamano_matriz)]
+
+        # 1. Comprobamos que el tablero esté lleno
+        if all(celda != "" for fila in matriz for celda in fila):
+            return True
+        
+        # 2. Verificamos si hay alguna línea "viva"
+        # Línea viva -> línea que no contiene símbolos de ambos jugadores
+        if any(not ("X" in linea and "O" in linea) for linea in _obtener_lineas()):
+            return False
+        
+        return True
+    
     def _cambiar_turno(self, partida: Partida):
         """
         Actualizamos la partida cambiando el turno
@@ -342,8 +385,22 @@ class RealizarMovimientoView(APIView):
                 status=status.HTTP_200_OK
             )
         
-        # Si se puede continuar la partida, actualizamos turnos
+        # Verificamos que se ha producido un empate
+        hay_empate = self._verificar_empate(matriz)
 
+        # Si hay empate, finalizamos la jugada
+        if hay_empate:
+            partida.finalizada = True
+            partida.save()
+            return Response(
+                {
+                    "estado": "empate",
+                    "tablero": matriz
+                },
+                status=status.HTTP_200_OK
+            )
+        
+        # Si se puede continuar la partida, actualizamos turnos
         self._cambiar_turno(partida)
         
         return Response(
