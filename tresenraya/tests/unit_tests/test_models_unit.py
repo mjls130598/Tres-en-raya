@@ -9,7 +9,7 @@ class TestPartida:
     def test_matriz_tablero_reconstruccion_correcta(self):
         """Verifica que el tablero 3x3 se reconstruya fielmente basándose en los movimientos y símbolos de los jugadores."""
 
-        # 1. Mock de la instancia de Partida
+        # 1. Mock de la movimiento de Partida
         partida = MagicMock()
         
         # 2. Mock de los Jugadores y sus símbolos
@@ -73,7 +73,7 @@ class TestTablero:
 
     @pytest.fixture
     def partida_mock(self):
-        """Fixture para obtener una instancia de Partida mockeada con pk."""
+        """Fixture para obtener una movimiento de Partida mockeada con pk."""
         partida = MagicMock(spec=Partida)
         partida.pk = 1
         # Añadimos el atributo _state para que Django no se queje si se accede a él
@@ -139,7 +139,7 @@ class TestTablero:
     @patch('tresenraya.models.Celda.objects.bulk_create')
     @patch('django.db.models.Model.save')
     def test_celdas_asignadas_al_tablero_correcto(self, mock_super_save, mock_bulk_create, partida_mock):
-        """Verifica que las celdas instanciadas tengan como referencia el objeto tablero actual (self)."""
+        """Verifica que las celdas movimientodas tengan como referencia el objeto tablero actual (self)."""
 
         tablero = Tablero()
         tablero.partida = partida_mock
@@ -211,3 +211,19 @@ class TestMovimiento:
 
         # No debe lanzar excepción
         mov_mock.clean()
+
+    def test_coordenadas_returns_correct_list():
+        """Prueba que se puede acceder a las coordenadas de la celda de ese movimiento"""
+        # 1. Creamos un movimiento del modelo sin guardarla
+        movimiento = Movimiento()
+        
+        # 2. Simulamos el objeto celda y sus atributos
+        mock_celda = MagicMock()
+        mock_celda.fila = 5
+        mock_celda.columna = 3
+        
+        # 3. Asignamos el mock al movimiento
+        movimiento.celda = mock_celda
+        
+        # 4. Verificamos el resultado
+        assert movimiento.coordenadas == [5, 3]

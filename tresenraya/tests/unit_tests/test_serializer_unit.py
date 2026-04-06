@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from django.contrib.auth.models import User
-from tresenraya.serializers import PartidaListadoSerializer, RegistroSerializer
+from tresenraya.serializers import MovimientoVisualizacionSerializer, PartidaListadoSerializer, RegistroSerializer
 
 @pytest.mark.django_db
 class TestRegistroSerializerUnitario:
@@ -148,3 +148,87 @@ class TestPartidaListadoSerializerUnitario:
         partida_mock.jugador_set.values_list.assert_called_with(
             'usuario__username', flat=True
         )
+
+class TestMovimientoVisualizacionSerializerUnitario:
+    """Tests unitarios puros para el serializador de visualización de movimientos."""
+
+    @pytest.fixture
+    def movimiento_mock(self):
+        """Crea un mock de una instancia de Movimiento con sus relaciones."""
+        movimiento = MagicMock()
+        movimiento.instante = "2024-01-01T12:00:00Z"
+        
+        # Mock de ReadOnlyFields (source)
+        movimiento.jugador.username = "jugador1"
+        movimiento.celda.valor = "X"
+        movimiento.coordenadas = "(1, 2)"
+        
+        # Necesario para la lógica de get_tablero
+        movimiento.partida = MagicMock()
+        
+        return movimiento
+
+    def test_serializer_retorna_campos_esperados(self, movimiento_mock):
+        """Verifica que el serializer devuelva los campos básicos correctamente."""
+        
+        # Mockeamos el método get_tablero para que no ejecute lógica de DB en este test
+        with patch.object(MovimientoVisualizacionSerializer, 'get_tablero', return_value=[[""]*3]*3):
+            serializer = MovimientoVisualizacionSerializer(instance=movimiento_mock)
+            data = serializer.data
+
+            assert data['instante'] == "2024-01-01T12:00:00Z"
+            assert data['jugador_nombre'] == "jugador1"
+            assert data['simbolo'] == "X"
+            assert data['posicion'] == "(1, 2)"
+            assert 'tablero' in data
+
+    def test_get_tablero_recreacion_logica(self, movimiento_mock):
+        """Verifica la lógica de reconstrucción de la matriz en get_tablero."""
+        
+        # 1. Preparamos movimientos antiguos simulados
+        mov1 = MagicMock()
+        mov1.celda.fila = 0
+        mov1.celda.columna = 0
+        mov1.celda.valor = "X"
+
+        mov2 = MagicMock()
+        mov2.celda.fila = 1
+        mov2.celda.columna = 1
+        mov2.celda.valor = "O"
+
+        # 2. Mockeamos el QuerySet y el método filter de Movimiento
+        mock_queryset = [mov1, mov2]
+        
+        # Usamos patch para interceptar la llamada a la base de datos
+        with patch('tresenraya.models.Movimiento.objects.filter') as mock_filter:
+            # Configuramos el encadenamiento de filter().select_related()
+            mock_filter.return_value.select_related.return_value = mock_queryset
+            
+            serializer = MovimientoVisualizacionSerializer()
+            matriz_result = serializer.get_tablero(movimiento_mock)
+
+            # 3. Verificaciones de la matriz
+            # Celda (0,0) debe ser X
+            assert matriz_result[0][0] == "X"
+            # Celda (1,1) debe ser O
+            assert matriz_result[1][1] == "O"
+            # Celda (2,2) debe estar vacía
+            assert matriz_result[2][2] == ""
+            
+            # 4. Verificar que se llamó al ORM con los filtros correctos
+            mock_filter.assert_called_once_with(
+                partida=movimiento_mock.partida,
+                instante__lte=movimiento_mock.instante
+            )
+
+    def test_get_tablero_matriz_vacia(self, movimiento_mock):
+        """Verifica que devuelve una matriz vacía si no hay movimientos previos."""
+        
+        with patch('tresenraya.models.Movimiento.objects.filter') as mock_filter:
+            mock_filter.return_value.select_related.return_value = []
+            
+            serializer = MovimientoVisualizacionSerializer()
+            matriz = serializer.get_tablero(movimiento_mock)
+            
+            expected_empty = [["", "", ""], ["", "", ""], ["", "", ""]]
+            assert matriz == expected_empty
