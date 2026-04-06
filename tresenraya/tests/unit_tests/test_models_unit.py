@@ -212,18 +212,21 @@ class TestMovimiento:
         # No debe lanzar excepción
         mov_mock.clean()
 
-    def test_coordenadas_returns_correct_list():
+    def test_coordenadas_returns_correct_list(self):
         """Prueba que se puede acceder a las coordenadas de la celda de ese movimiento"""
-        # 1. Creamos un movimiento del modelo sin guardarla
+        
+        # 1. Instanciamos el modelo real (sin guardarlo en DB)
         movimiento = Movimiento()
         
-        # 2. Simulamos el objeto celda y sus atributos
-        mock_celda = MagicMock()
+        # 2. Creamos un mock para la celda con coordenadas específicas
+        mock_celda = MagicMock(spec=Celda)
         mock_celda.fila = 5
         mock_celda.columna = 3
         
-        # 3. Asignamos el mock al movimiento
-        movimiento.celda = mock_celda
-        
-        # 4. Verificamos el resultado
-        assert movimiento.coordenadas == [5, 3]
+        # 3. PARCHEO: Evitamos el descriptor de Django
+        with patch.object(Movimiento, 'celda', mock_celda):
+            # 4. Verificamos el resultado
+            resultado = movimiento.coordenadas
+            
+            assert resultado == [5, 3]
+            assert isinstance(resultado, list)
