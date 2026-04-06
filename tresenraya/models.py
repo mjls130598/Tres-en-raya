@@ -102,5 +102,6 @@ class Movimiento(models.Model):
         if self.partida.turno_actual != self.jugador:
             raise ValidationError("No es el turno de este jugador")
         
+    @property
     def coordenadas(self):
-        return f"({self.celda.fila}, {self.celda.columna})" 
+        return [self.celda.fila, self.celda.columna] 
