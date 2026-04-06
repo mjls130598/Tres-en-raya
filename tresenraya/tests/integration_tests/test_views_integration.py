@@ -375,3 +375,98 @@ class TestRealizarMovimientoView:
         
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data['Error'] == "Coordenadas fuera del tablero"
+
+
+@pytest.mark.django_db
+class TestListarMovimientosIntegration:
+
+    @pytest.fixture
+    def setup_datos(self):
+        """Crea una partida con jugadores y movimientos reales."""
+        # 1. Usuarios
+        u1 = User.objects.create_user(username="jugador1", password="pass123")
+        u2 = User.objects.create_user(username="jugador2", password="pass456")
+        u_extra = User.objects.create_user(username="fisgon", password="pass789")
+        
+        # 2. Partida y Tablero (Tablero crea las celdas automáticamente)
+        partida = Partida.objects.create(turno_actual=u1)
+        tablero = Tablero.objects.create(partida=partida)
+        
+        # 3. Registrar a los jugadores en la partida
+        Jugador.objects.create(usuario=u1, partida=partida, simbolo="X")
+        Jugador.objects.create(usuario=u2, partida=partida, simbolo="O")
+        
+        # 4. Crear un movimiento real
+        # Recuperamos la celda (0,0) creada por el save() del tablero
+        celda = Celda.objects.get(tablero=tablero, fila=0, columna=0)
+        celda.valor = "X"
+        celda.save()
+        
+        Movimiento.objects.create(
+            partida=partida, 
+            jugador=u1, 
+            celda=celda
+        )
+        
+        return {
+            "partida": partida,
+            "jugador1": u1,
+            "jugador2": u2,
+            "fisgon": u_extra
+        }
+
+    def test_get_movimientos_exito(self, api_client, setup_datos):
+        """Verifica que un jugador de la partida puede ver los movimientos."""
+        partida = setup_datos["partida"]
+        user = setup_datos["jugador1"]
+        
+        api_client.force_authenticate(user=user)
+        url = reverse('movimientos', kwargs={'partida_id': partida.id})
+        
+        response = api_client.get(url)
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["estado"] == "jugando"
+        assert len(response.data["movimientos"]) == 1
+        assert response.data["movimientos"][0]["simbolo"] == "X"
+        assert response.data["movimientos"][0]["posicion"] == [0, 0]
+
+    def test_get_movimientos_error_403_ajeno(self, api_client, setup_datos):
+        """Un usuario que no está en la partida no puede ver los movimientos."""
+        partida = setup_datos["partida"]
+        user_ajeno = setup_datos["fisgon"]
+        
+        api_client.force_authenticate(user=user_ajeno)
+        url = reverse('movimientos', kwargs={'partida_id': partida.id})
+        
+        response = api_client.get(url)
+        
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["Error"] == "No puedes ver los movimientos de esa partida"
+
+    def test_get_movimientos_error_404_inexistente(self, api_client, setup_datos):
+        """Error si la partida_id no existe en la DB."""
+        api_client.force_authenticate(user=setup_datos["jugador1"])
+        url = reverse('movimientos', kwargs={'partida_id': 9999})
+        
+        response = api_client.get(url)
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_get_estado_partida_finalizada(self, api_client, setup_datos):
+        """Verifica que el estado cambia a 'ganada' si la partida termina."""
+        partida = setup_datos["partida"]
+        user = setup_datos["jugador1"]
+        
+        # Simulamos fin de partida
+        partida.finalizada = True
+        partida.ganador = user
+        partida.save()
+        
+        api_client.force_authenticate(user=user)
+        url = reverse('movimientos', kwargs={'partida_id': partida.id})
+        
+        response = api_client.get(url)
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["estado"] == "ganada"
