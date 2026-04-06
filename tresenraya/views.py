@@ -8,7 +8,7 @@ from rest_framework import permissions, status
 from django.db import transaction
 from tresenraya.models import Celda, Jugador, Movimiento, Partida, Tablero
 from django.contrib.auth.models import User
-from tresenraya.serializers import PartidaListadoSerializer, RegistroSerializer
+from tresenraya.serializers import MovimientoVisualizacionSerializer, PartidaListadoSerializer, RegistroSerializer
 
 class RegistroView(APIView):
     """Registro de un nuevo usuario en el sistema"""
@@ -409,4 +409,77 @@ class RealizarMovimientoView(APIView):
                 "tablero": matriz
             },
             status=status.HTTP_200_OK
+        )
+
+
+class ListarMovimientosView(APIView):
+    """Visualización de todos los movimientos de una partida"""
+
+    def get(self, request, partida_id: int):
+
+        # 1. Comprobamos que la partida existe
+        try:
+            partida = Partida.objects.get(id=partida_id)
+        except Partida.DoesNotExist:
+            return Response(
+                {"Error": "La partida dada no existe"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # 2. Verificamos que el usuario forma parte de esa partida
+        es_jugador = partida.jugador_set.filter(usuario=request.user).exists()
+
+        if not es_jugador:
+            return Response(
+                {"Error": "No puedes ver los movimientos de esa partida"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # 3. Recogemos todos los movimientos de esa partida
+        movimientos = Movimiento.objects.filter(partida=partida).order_by('instante')
+
+        # 4. Obtenemos los datos relevantes de cada movimiento
+        movimientos_datos = MovimientoVisualizacionSerializer(movimientos, many=True).data
+
+        return Response(
+            {
+                "estado": ("ganada" if partida.ganador else "empate") if partida.finalizada else "jugando",
+                "movimientos": movimientos_datos
+            }
+        )
+    
+class UltimoMovimientoView(APIView):
+    """Visualización del último movimiento de una partida"""
+
+    def get(self, request, partida_id: int):
+
+        # 1. Comprobamos que la partida existe
+        try:
+            partida = Partida.objects.get(id=partida_id)
+        except Partida.DoesNotExist:
+            return Response(
+                {"Error": "La partida dada no existe"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # 2. Verificamos que el usuario forma parte de esa partida
+        es_jugador = partida.jugador_set.filter(usuario=request.user).exists()
+
+        if not es_jugador:
+            return Response(
+                {"Error": "No puedes ver los movimientos de esa partida"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # 3. Recogemos el último de esa partida
+        ultimo_movimiento = Movimiento.objects.filter(partida=partida).latest('instante')
+
+        # 4. Recogemos los datos relevantes de ese movimiento
+        ultimo_movimiento_datos = MovimientoVisualizacionSerializer(ultimo_movimiento, many=False).data
+
+        return Response(
+            {
+                "estado": ("ganada" if partida.ganador else "empate") if partida.finalizada else "jugando",
+                "movimiento": ultimo_movimiento_datos
+            }
         )
