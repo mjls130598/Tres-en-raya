@@ -101,3 +101,6 @@ class Movimiento(models.Model):
         # 2. Validar que es el turno del jugador
         if self.partida.turno_actual != self.jugador:
             raise ValidationError("No es el turno de este jugador")
+        
+    def coordenadas(self):
+        return f"({self.celda.fila}, {self.celda.columna})" 
