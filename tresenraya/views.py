@@ -472,7 +472,13 @@ class UltimoMovimientoView(APIView):
             )
         
         # 3. Recogemos el último de esa partida
-        ultimo_movimiento = Movimiento.objects.filter(partida=partida).latest('instante')
+        try:
+            ultimo_movimiento = Movimiento.objects.filter(partida=partida).latest('instante')
+        except Movimiento.DoesNotExist:
+            return Response(
+                {"Error": "Esta partida no tiene ningún movimiento aún"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # 4. Recogemos los datos relevantes de ese movimiento
         ultimo_movimiento_datos = MovimientoVisualizacionSerializer(ultimo_movimiento, many=False).data

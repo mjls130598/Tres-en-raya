@@ -3,8 +3,8 @@ from rest_framework import status
 from unittest.mock import MagicMock, patch
 from rest_framework.response import Response
 from django.contrib.auth.models import User
-from tresenraya.models import Celda, Jugador, Partida
-from tresenraya.views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RealizarMovimientoView, RegistroView
+from tresenraya.models import Celda, Jugador, Movimiento, Partida
+from tresenraya.views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RealizarMovimientoView, RegistroView, UltimoMovimientoView
 
 class TestRegistroViewUnitario:
     """
@@ -791,6 +791,7 @@ class TestRealizarMovimientoUnitario:
         assert response.data["tablero"] == partida_mock.matriz_tablero
 
 class TestListarMovimientosUnitario:
+    """Verifica que se muestra todos los movimientos de una partida"""
 
     @pytest.fixture
     def view(self):
@@ -806,6 +807,7 @@ class TestListarMovimientosUnitario:
     @patch('tresenraya.models.Partida.objects.get')
     def test_get_error_partida_no_existe(self, mock_get, view, request_mock):
         """Verifica error 404 si el ID de partida no existe en la DB."""
+
         mock_get.side_effect = Partida.DoesNotExist
         
         response = view.get(request_mock, partida_id=999)
@@ -816,6 +818,7 @@ class TestListarMovimientosUnitario:
     @patch('tresenraya.models.Partida.objects.get')
     def test_get_error_usuario_no_es_jugador(self, mock_get, view, request_mock):
         """Verifica error 403 si el usuario no pertenece a la partida."""
+
         # Configuramos la partida mock
         partida_mock = MagicMock()
         # El filtro de jugadores devuelve un QuerySet cuya existencia es False
@@ -834,6 +837,7 @@ class TestListarMovimientosUnitario:
     @patch('tresenraya.models.Partida.objects.get')
     def test_get_exito_retorna_movimientos_y_estado_jugando(self, mock_get, mock_mov_filter, mock_serializer, view, request_mock):
         """Verifica flujo correcto para una partida en curso."""
+
         # 1. Mock Partida (en juego)
         partida_mock = MagicMock()
         partida_mock.finalizada = False
@@ -864,6 +868,7 @@ class TestListarMovimientosUnitario:
     @patch('tresenraya.models.Partida.objects.get')
     def test_get_estado_finalizada_ganada(self, mock_get, mock_mov_filter, mock_serializer, view, request_mock):
         """Verifica que el estado sea 'ganada' si hay ganador y está finalizada."""
+
         partida_mock = MagicMock()
         partida_mock.finalizada = True
         partida_mock.ganador = MagicMock(spec=User)
@@ -882,6 +887,7 @@ class TestListarMovimientosUnitario:
     @patch('tresenraya.models.Partida.objects.get')
     def test_get_estado_finalizada_empate(self, mock_get, mock_mov_filter, mock_serializer, view, request_mock):
         """Verifica que el estado sea 'empate' si no hay ganador y está finalizada."""
+
         partida_mock = MagicMock()
         partida_mock.finalizada = True
         partida_mock.ganador = None
@@ -894,3 +900,121 @@ class TestListarMovimientosUnitario:
         response = view.get(request_mock, partida_id=1)
 
         assert response.data["estado"] == "empate"
+
+class TestUltimoMovimientoUnitario:
+    """Verifica que se obtiene el último movimiento de una partida"""
+
+    @pytest.fixture
+    def view(self):
+        return UltimoMovimientoView()
+
+    @pytest.fixture
+    def request_mock(self):
+        request = MagicMock()
+        request.user = MagicMock(spec=User)
+        return request
+
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_error_partida_no_existe(self, mock_get, view, request_mock):
+        """Verifica 404 si la partida no existe."""
+
+        mock_get.side_effect = Partida.DoesNotExist
+        
+        response = view.get(request_mock, partida_id=999)
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.data["Error"] == "La partida dada no existe"
+
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_error_usuario_no_es_jugador(self, mock_get, view, request_mock):
+        """Verifica 403 si el usuario intenta fisgonear otra partida."""
+
+        partida_mock = MagicMock()
+        # Simulamos que el usuario no está en la lista de jugadores
+        partida_mock.jugador_set.filter.return_value.exists.return_value = False
+        mock_get.return_value = partida_mock
+
+        response = view.get(request_mock, partida_id=1)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["Error"] == "No puedes ver los movimientos de esa partida"
+
+    @patch('tresenraya.views.MovimientoVisualizacionSerializer')
+    @patch('tresenraya.models.Movimiento.objects.filter')
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_exito_retorna_solo_el_ultimo(self, mock_get, mock_mov_filter, mock_serializer, view, request_mock):
+        """Verifica que se llame a .latest() y se devuelva un único objeto."""
+
+        # 1. Mock Partida
+        partida_mock = MagicMock()
+        partida_mock.finalizada = False
+        partida_mock.ganador = None
+        partida_mock.jugador_set.filter.return_value.exists.return_value = True
+        mock_get.return_value = partida_mock
+
+        # 2. Mock Movimiento (Simulamos el encadenamiento .filter().latest())
+        mock_qs = MagicMock()
+        mock_mov_filter.return_value = mock_qs
+        ultimo_mov_mock = MagicMock(spec=Movimiento)
+        mock_qs.latest.return_value = ultimo_mov_mock
+
+        # 3. Mock Serializer (many=False)
+        mock_serializer.return_value.data = {"id": 99, "posicion": [1,1]}
+
+        response = view.get(request_mock, partida_id=1)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["estado"] == "jugando"
+        # Verificamos que la data es un objeto, no una lista
+        assert response.data["movimiento"]["id"] == 99
+        
+        # Verificaciones de llamadas
+        mock_mov_filter.assert_called_once_with(partida=partida_mock)
+        mock_qs.latest.assert_called_once_with('instante')
+        mock_serializer.assert_called_once_with(ultimo_mov_mock, many=False)
+
+    @patch('tresenraya.views.MovimientoVisualizacionSerializer')
+    @patch('tresenraya.models.Movimiento.objects.filter')
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_estado_finalizada_y_ganada(self, mock_get, mock_mov_filter, mock_serializer, view, request_mock):
+        """Verifica la lógica de estado cuando la partida tiene ganador."""
+
+        partida_mock = MagicMock()
+        partida_mock.finalizada = True
+        partida_mock.ganador = MagicMock(spec=User) # Hay ganador
+        partida_mock.jugador_set.filter.return_value.exists.return_value = True
+        mock_get.return_value = partida_mock
+        
+        # Mocks mínimos para que no explote el resto de la vista
+        mock_mov_filter.return_value.latest.return_value = MagicMock()
+        mock_serializer.return_value.data = {}
+
+        response = view.get(request_mock, partida_id=1)
+
+        assert response.data["estado"] == "ganada"
+
+    @patch('tresenraya.models.Movimiento.objects.filter')
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_error_partida_sin_movimientos(self, mock_get, mock_mov_filter, view, request_mock):
+        """Verifica el error 400 si la partida existe pero aún no tiene movimientos."""
+        
+        # 1. Configuramos la partida para que el usuario tenga acceso
+        partida_mock = MagicMock()
+        partida_mock.jugador_set.filter.return_value.exists.return_value = True
+        mock_get.return_value = partida_mock
+        
+        # 2. Simulamos que .latest() lanza la excepción Movimiento.DoesNotExist
+        # Importante: side_effect se aplica al mock que devuelve el .filter()
+        mock_qs = MagicMock()
+        mock_mov_filter.return_value = mock_qs
+        mock_qs.latest.side_effect = Movimiento.DoesNotExist
+        
+        # 3. Ejecutamos la petición
+        response = view.get(request_mock, partida_id=1)
+        
+        # 4. Aserciones
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["Error"] == "Esta partida no tiene ningún movimiento aún"
+        
+        # Verificamos que se intentó buscar el último movimiento por 'instante'
+        mock_qs.latest.assert_called_once_with('instante')
