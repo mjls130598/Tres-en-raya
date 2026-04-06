@@ -1,7 +1,7 @@
 import pytest
 from django.urls import reverse, resolve
 from rest_framework.authtoken.views import obtain_auth_token
-from tresenraya.views import CrearPartidaView, ListarPartidasView, RegistroView
+from tresenraya.views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RealizarMovimientoView, RegistroView, UltimoMovimientoView
 
 class TestUrlsUnitario:
     """
@@ -41,12 +41,51 @@ class TestUrlsUnitario:
         assert resolver.func.view_class == ListarPartidasView
         assert resolver.view_name == 'get_partidas'
 
-    @pytest.mark.parametrize("url_name", ['signup', 'login', 'nueva_partida', 'get_partidas'])
-    def test_urls_names_exist(self, url_name):
-        """
-        Test de regresión rápido para asegurar que todos los nombres 
-        definidos en urlpatterns existen y son reversibles.
-        """
+    def test_jugada_url_resolves(self):
+        """Verifica la ruta de listado de partidas."""
 
-        url = reverse(url_name)
+        url = reverse('jugada')
+        resolver = resolve(url)
+        assert resolver.func.view_class == RealizarMovimientoView
+        assert resolver.view_name == 'jugada'
+
+    def test_movimientos_url_resolves(self):
+        """Verifica la ruta de listado de partidas."""
+
+        partida_id = 1
+        url = reverse('movimientos', kwargs={'partida_id': partida_id})
+        resolver = resolve(url)
+        assert resolver.func.view_class == ListarMovimientosView
+        assert resolver.view_name == 'movimientos'
+        assert 'partida_id' in resolver.kwargs
+        assert resolver.kwargs['partida_id'] == partida_id
+
+    def test_ultimo_movimiento_url_resolves(self):
+        """Verifica la ruta de listado de partidas."""
+
+        partida_id = 1
+        url = reverse('ultimo_movimiento', kwargs={'partida_id': partida_id})
+        resolver = resolve(url)
+        assert resolver.func.view_class == UltimoMovimientoView
+        assert resolver.view_name == 'ultimo_movimiento'
+        assert 'partida_id' in resolver.kwargs
+        assert resolver.kwargs['partida_id'] == partida_id
+
+
+    @pytest.mark.parametrize("url_name, kwargs", [
+        ('signup', {}),
+        ('login', {}),
+        ('nueva_partida', {}),
+        ('get_partidas', {}),
+        ('jugada', {}),
+        # Estas dos ahora reciben el ID que esperan:
+        ('movimientos', {'partida_id': 1}),
+        ('ultimo_movimiento', {'partida_id': 1}),
+    ])
+    def test_urls_names_exist(self, url_name, kwargs):
+        """
+        Verifica que las URLs existen y son reversibles, 
+        manejando parámetros dinámicos cuando es necesario.
+        """
+        url = reverse(url_name, kwargs=kwargs)
         assert url is not None
