@@ -31,7 +31,7 @@ class PartidaListadoSerializer(serializers.ModelSerializer):
         """Obtener todos los jugadores de la partida"""
         return obj.jugador_set.values_list('usuario__username', flat=True)
     
-class MovimientoListadoSerializer(serializers.ModelSerializer):
+class MovimientoVisualizacionSerializer(serializers.ModelSerializer):
     """Serializador para obtención del listado de movimientos de una partida"""
 
     jugador_nombre = serializers.ReadOnlyField(source="jugador.username")
