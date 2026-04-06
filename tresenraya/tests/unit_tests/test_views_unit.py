@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from rest_framework.response import Response
 from django.contrib.auth.models import User
 from tresenraya.models import Celda, Jugador, Partida
-from tresenraya.views import CrearPartidaView, ListarPartidasView, RealizarMovimientoView, RegistroView
+from tresenraya.views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RealizarMovimientoView, RegistroView
 
 class TestRegistroViewUnitario:
     """
@@ -259,7 +259,7 @@ class TestCrearPartidaUnitario:
         # Verificamos el mensaje de error definido en tu código
         assert response.data["Error"] == "No se pudo crear la partida"
 
-class TestListartresenrayaUnitario:
+class TestListarPartidasUnitario:
 
     @pytest.fixture
     def view(self):
@@ -789,3 +789,108 @@ class TestRealizarMovimientoUnitario:
         assert response.data["estado"] == "jugando"
         assert response.data["turno_actual"] == "jugador_2"
         assert response.data["tablero"] == partida_mock.matriz_tablero
+
+class TestListarMovimientosUnitario:
+
+    @pytest.fixture
+    def view(self):
+        return ListarMovimientosView()
+
+    @pytest.fixture
+    def request_mock(self):
+        request = MagicMock()
+        # Simulamos un usuario autenticado
+        request.user = MagicMock(spec=User)
+        return request
+
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_error_partida_no_existe(self, mock_get, view, request_mock):
+        """Verifica error 404 si el ID de partida no existe en la DB."""
+        mock_get.side_effect = Partida.DoesNotExist
+        
+        response = view.get(request_mock, partida_id=999)
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.data["Error"] == "La partida dada no existe"
+
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_error_usuario_no_es_jugador(self, mock_get, view, request_mock):
+        """Verifica error 403 si el usuario no pertenece a la partida."""
+        # Configuramos la partida mock
+        partida_mock = MagicMock()
+        # El filtro de jugadores devuelve un QuerySet cuya existencia es False
+        partida_mock.jugador_set.filter.return_value.exists.return_value = False
+        mock_get.return_value = partida_mock
+
+        response = view.get(request_mock, partida_id=1)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["Error"] == "No puedes ver los movimientos de esa partida"
+        # Verificamos que se filtró por el usuario de la petición
+        partida_mock.jugador_set.filter.assert_called_once_with(usuario=request_mock.user)
+
+    @patch('tresenraya.views.MovimientoVisualizacionSerializer')
+    @patch('tresenraya.models.Movimiento.objects.filter')
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_exito_retorna_movimientos_y_estado_jugando(self, mock_get, mock_mov_filter, mock_serializer, view, request_mock):
+        """Verifica flujo correcto para una partida en curso."""
+        # 1. Mock Partida (en juego)
+        partida_mock = MagicMock()
+        partida_mock.finalizada = False
+        partida_mock.ganador = None
+        partida_mock.jugador_set.filter.return_value.exists.return_value = True
+        mock_get.return_value = partida_mock
+
+        # 2. Mock Movimientos
+        mock_qs = MagicMock()
+        mock_mov_filter.return_value = mock_qs
+        mock_qs.order_by.return_value = ["mov1", "mov2"] # Datos ficticios
+
+        # 3. Mock Serializer
+        mock_serializer.return_value.data = [{"id": 10}, {"id": 11}]
+
+        response = view.get(request_mock, partida_id=1)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["estado"] == "jugando"
+        assert response.data["movimientos"] == [{"id": 10}, {"id": 11}]
+        
+        # Verificamos ordenación
+        mock_mov_filter.assert_called_once_with(partida=partida_mock)
+        mock_qs.order_by.assert_called_once_with('instante')
+
+    @patch('tresenraya.views.MovimientoVisualizacionSerializer')
+    @patch('tresenraya.models.Movimiento.objects.filter')
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_estado_finalizada_ganada(self, mock_get, mock_mov_filter, mock_serializer, view, request_mock):
+        """Verifica que el estado sea 'ganada' si hay ganador y está finalizada."""
+        partida_mock = MagicMock()
+        partida_mock.finalizada = True
+        partida_mock.ganador = MagicMock(spec=User)
+        partida_mock.jugador_set.filter.return_value.exists.return_value = True
+        mock_get.return_value = partida_mock
+        
+        mock_mov_filter.return_value.order_by.return_value = []
+        mock_serializer.return_value.data = []
+
+        response = view.get(request_mock, partida_id=1)
+
+        assert response.data["estado"] == "ganada"
+
+    @patch('tresenraya.views.MovimientoVisualizacionSerializer')
+    @patch('tresenraya.models.Movimiento.objects.filter')
+    @patch('tresenraya.models.Partida.objects.get')
+    def test_get_estado_finalizada_empate(self, mock_get, mock_mov_filter, mock_serializer, view, request_mock):
+        """Verifica que el estado sea 'empate' si no hay ganador y está finalizada."""
+        partida_mock = MagicMock()
+        partida_mock.finalizada = True
+        partida_mock.ganador = None
+        partida_mock.jugador_set.filter.return_value.exists.return_value = True
+        mock_get.return_value = partida_mock
+        
+        mock_mov_filter.return_value.order_by.return_value = []
+        mock_serializer.return_value.data = []
+
+        response = view.get(request_mock, partida_id=1)
+
+        assert response.data["estado"] == "empate"
