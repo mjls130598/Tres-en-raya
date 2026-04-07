@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework.authtoken.views import obtain_auth_token
-from .views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RealizarMovimientoView, RegistroView, UltimoMovimientoView
+from .views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RankingView, RealizarMovimientoView, RegistroView, UltimoMovimientoView
 
 urlpatterns = [
     path('api/signup/', RegistroView.as_view(), name='signup'),
@@ -10,4 +10,5 @@ urlpatterns = [
     path('api/jugada/', RealizarMovimientoView.as_view(), name='jugada'),
     path('api/partidas/<int:partida_id>/movimientos/', ListarMovimientosView.as_view(), name='movimientos'),
     path('api/partidas/<int:partida_id>/ultimo_movimiento/', UltimoMovimientoView.as_view(), name='ultimo_movimiento'),
+    path('api/ranking/', RankingView.as_view(), name='ranking')
 ]
