@@ -212,7 +212,7 @@ class TestMovimiento:
         # No debe lanzar excepción
         mov_mock.clean()
 
-    def test_coordenadas_returns_correct_list(self):
+    def test_coordenadas_lista(self):
         """Prueba que se puede acceder a las coordenadas de la celda de ese movimiento"""
         
         # 1. Instanciamos el modelo real (sin guardarlo en DB)
