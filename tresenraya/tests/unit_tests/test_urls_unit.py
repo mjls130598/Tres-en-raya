@@ -1,7 +1,7 @@
 import pytest
 from django.urls import reverse, resolve
 from rest_framework.authtoken.views import obtain_auth_token
-from tresenraya.views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RealizarMovimientoView, RegistroView, UltimoMovimientoView
+from tresenraya.views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RankingView, RealizarMovimientoView, RegistroView, UltimoMovimientoView
 
 class TestUrlsUnitario:
     """
@@ -71,6 +71,13 @@ class TestUrlsUnitario:
         assert 'partida_id' in resolver.kwargs
         assert resolver.kwargs['partida_id'] == partida_id
 
+    def test_ranking_url_resolves(self):
+        """Verifica la ruta de listado de partidas."""
+
+        url = reverse('ranking')
+        resolver = resolve(url)
+        assert resolver.func.view_class == RankingView
+        assert resolver.view_name == 'ranking'
 
     @pytest.mark.parametrize("url_name, kwargs", [
         ('signup', {}),
@@ -81,6 +88,7 @@ class TestUrlsUnitario:
         # Estas dos ahora reciben el ID que esperan:
         ('movimientos', {'partida_id': 1}),
         ('ultimo_movimiento', {'partida_id': 1}),
+        ('ranking', {})
     ])
     def test_urls_names_exist(self, url_name, kwargs):
         """

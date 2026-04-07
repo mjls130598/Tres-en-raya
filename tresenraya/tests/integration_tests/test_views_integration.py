@@ -538,6 +538,7 @@ class TestUltimoMovimientoIntegracion:
 
     def test_obtener_ultimo_movimiento_exito(self, api_client, setup_datos):
         """Verifica que se recupera correctamente el movimiento más reciente."""
+
         data = setup_datos
         api_client.force_authenticate(user=data["me"])
         
@@ -550,6 +551,7 @@ class TestUltimoMovimientoIntegracion:
 
     def test_error_partida_sin_movimientos(self, api_client, setup_datos):
         """Verifica el error 400 cuando la partida no tiene historial."""
+
         data = setup_datos
         api_client.force_authenticate(user=data["me"])
         
@@ -561,6 +563,7 @@ class TestUltimoMovimientoIntegracion:
 
     def test_error_acceso_denegado_partida_ajena(self, api_client, setup_datos):
         """Un usuario no puede ver el último movimiento de una partida donde no juega."""
+
         data = setup_datos
         api_client.force_authenticate(user=data["me"])
         
@@ -573,6 +576,7 @@ class TestUltimoMovimientoIntegracion:
 
     def test_obtener_ultimo_movimiento_partida_finalizada(self, api_client, setup_datos):
         """Verifica el estado de la respuesta cuando la partida ha terminado."""
+
         data = setup_datos
         p_a = data["p_a"]
         p_a.finalizada = True
@@ -585,3 +589,103 @@ class TestUltimoMovimientoIntegracion:
         
         assert response.status_code == status.HTTP_200_OK
         assert response.data["estado"] == "ganada"
+
+@pytest.mark.django_db
+class TestRankingViewIntegracion:
+    """Tests de integración para validar las estadísticas del Ranking."""
+
+    @pytest.fixture
+    def setup_datos(self):
+        """
+        Crea un escenario real de base de datos siguiendo la lógica del juego.
+        """
+        # 1. Usuarios
+        me = User.objects.create_user(username="me", password="123")
+        rival = User.objects.create_user(username="rival", password="123")
+        stranger = User.objects.create_user(username="stranger", password="123")
+
+        # --- PARTIDA 1: GANADA POR 'ME' ---
+        p_ganada = Partida.objects.create(finalizada=True, ganador=me)
+        Tablero.objects.create(partida=p_ganada) 
+        Jugador.objects.create(usuario=me, partida=p_ganada, simbolo="X")
+        Jugador.objects.create(usuario=rival, partida=p_ganada, simbolo="O")
+
+        # --- PARTIDA 2: EMPATADA (Finalizada, sin ganador) ---
+        p_empatada = Partida.objects.create(finalizada=True, ganador=None)
+        Tablero.objects.create(partida=p_empatada)
+        Jugador.objects.create(usuario=me, partida=p_empatada, simbolo="X")
+        Jugador.objects.create(usuario=rival, partida=p_empatada, simbolo="O")
+
+        # --- PARTIDA 3: PERDIDA (Ganador es el rival) ---
+        p_perdida = Partida.objects.create(finalizada=True, ganador=rival)
+        Tablero.objects.create(partida=p_perdida)
+        Jugador.objects.create(usuario=me, partida=p_perdida, simbolo="X")
+        Jugador.objects.create(usuario=rival, partida=p_perdida, simbolo="O")
+
+        # --- PARTIDA 4: EN CURSO (No finalizada, turno de 'me') ---
+        p_curso = Partida.objects.create(finalizada=False, turno_actual=me)
+        Tablero.objects.create(partida=p_curso)
+        Jugador.objects.create(usuario=me, partida=p_curso, simbolo="X")
+        Jugador.objects.create(usuario=rival, partida=p_curso, simbolo="O")
+
+        # --- PARTIDA 5: AJENA (Usuario 'me' no participa) ---
+        p_ajena = Partida.objects.create(finalizada=True, ganador=stranger)
+        Tablero.objects.create(partida=p_ajena)
+        Jugador.objects.create(usuario=stranger, partida=p_ajena, simbolo="X")
+        Jugador.objects.create(usuario=rival, partida=p_ajena, simbolo="O")
+
+        return {
+            "me": me,
+            "stranger": stranger
+        }
+
+    def test_ranking_calculos_correctos(self, api_client, setup_datos):
+        """Verifica que los contadores sumen correctamente según el estado de las partidas."""
+        
+        data = setup_datos
+        api_client.force_authenticate(user=data["me"])
+        
+        url = reverse('ranking')
+        response = api_client.get(url)
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["Total partidas jugadas"] == 4
+        assert response.data["Total partidas ganadas"] == 1
+        assert response.data["Total partidas empatadas"] == 1
+        assert response.data["Total partidas perdidas"] == 1
+
+    def test_ranking_aislamiento_usuarios(self, api_client, setup_datos):
+        """Verifica que un usuario no vea las estadísticas de partidas ajenas."""
+        
+        data = setup_datos
+        # Entramos con 'stranger', que solo tiene 1 partida en el setup
+        api_client.force_authenticate(user=data["stranger"])
+        
+        url = reverse('ranking')
+        response = api_client.get(url)
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["Total partidas jugadas"] == 1
+        assert response.data["Total partidas ganadas"] == 1
+        assert response.data["Total partidas perdidas"] == 0
+
+    def test_ranking_usuario_sin_partidas(self, api_client):
+        """Verifica el comportamiento con un usuario que no tiene relación con ninguna partida."""
+        
+        nuevo_user = User.objects.create_user(username="nuevo", password="123")
+        api_client.force_authenticate(user=nuevo_user)
+        
+        url = reverse('ranking')
+        response = api_client.get(url)
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["Total partidas jugadas"] == 0
+        assert all(v == 0 for v in response.data.values())
+
+    def test_ranking_acceso_anonimo_denegado(self, api_client):
+        """Verifica que la vista proteja los datos si no hay login."""
+        
+        url = reverse('ranking')
+        response = api_client.get(url)
+        
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED

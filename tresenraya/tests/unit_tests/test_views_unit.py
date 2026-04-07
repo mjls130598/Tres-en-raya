@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from rest_framework.response import Response
 from django.contrib.auth.models import User
 from tresenraya.models import Celda, Jugador, Movimiento, Partida
-from tresenraya.views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RealizarMovimientoView, RegistroView, UltimoMovimientoView
+from tresenraya.views import CrearPartidaView, ListarMovimientosView, ListarPartidasView, RankingView, RealizarMovimientoView, RegistroView, UltimoMovimientoView
 
 class TestRegistroViewUnitario:
     """
@@ -1018,3 +1018,97 @@ class TestUltimoMovimientoUnitario:
         
         # Verificamos que se intentó buscar el último movimiento por 'instante'
         mock_qs.latest.assert_called_once_with('instante')
+
+class TestRankingViewUnitario:
+    """Verifica el resumen de estadísticas de partidas de un usuario."""
+
+    @pytest.fixture
+    def view(self):
+        return RankingView()
+
+    @pytest.fixture
+    def request_mock(self):
+        request = MagicMock()
+        request.user = MagicMock(spec=User)
+        return request
+
+    @patch('tresenraya.models.Partida.objects.filter')  # Ajusta el path del patch
+    def test_get_ranking_usuario_sin_partidas(self, mock_filter, view, request_mock):
+        """Verifica que si el usuario no tiene partidas, todos los campos retornan 0."""
+
+        # 1. Configuramos el mock principal (partidas_usuario)
+        mock_qs_principal = MagicMock()
+        mock_filter.return_value = mock_qs_principal
+        
+        # 2. Todos los counts deben devolver 0
+        mock_qs_principal.count.return_value = 0
+        
+        # Mockeamos los filtros internos (ganadas, empatadas, perdidas)
+        mock_qs_interno = MagicMock()
+        mock_qs_interno.count.return_value = 0
+        mock_qs_principal.filter.return_value = mock_qs_interno
+        
+        # Mockeamos la cadena de perdidas: .filter().exclude().exclude().count()
+        mock_qs_interno.exclude.return_value = mock_qs_interno
+        
+        response = view.get(request_mock)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["Total partidas jugadas"] == 0
+        assert response.data["Total partidas ganadas"] == 0
+        assert response.data["Total partidas empatadas"] == 0
+        assert response.data["Total partidas perdidas"] == 0
+        
+        # Verificamos que se filtró por el usuario del request
+        mock_filter.assert_called_once_with(jugador__usuario=request_mock.user)
+
+    @patch('tresenraya.models.Partida.objects.filter')
+    def test_get_ranking_con_datos_mixtos(self, mock_filter, view, request_mock):
+        """Verifica que la lógica de conteo procesa correctamente cada categoría."""
+
+        # 1. Mock del QuerySet inicial (Total jugadas)
+        mock_qs_principal = MagicMock()
+        mock_qs_principal.count.return_value = 10
+        mock_filter.return_value = mock_qs_principal
+
+        # 2. Mock para Partidas Ganadas
+        mock_qs_ganadas = MagicMock()
+        mock_qs_ganadas.count.return_value = 5
+
+        # 3. Mock para Partidas Empatadas
+        mock_qs_empatadas = MagicMock()
+        mock_qs_empatadas.count.return_value = 2
+
+        # 4. Mock para Partidas Perdidas (Cadena: filter -> exclude -> exclude)
+        mock_qs_perdidas_base = MagicMock()
+        mock_qs_exclude_1 = MagicMock()
+        mock_qs_exclude_2 = MagicMock()
+        
+        mock_qs_perdidas_base.exclude.return_value = mock_qs_exclude_1
+        mock_qs_exclude_1.exclude.return_value = mock_qs_exclude_2
+        mock_qs_exclude_2.count.return_value = 3
+
+        # Configuramos el side_effect de filter para que devuelva los mocks en orden
+        # La vista llama a filter() 3 veces sobre partidas_usuario
+        mock_qs_principal.filter.side_effect = [
+            mock_qs_ganadas,      # Llamada 2: .filter(ganador=request.user)
+            mock_qs_empatadas,    # Llamada 3: .filter(finalizada=True, ganador__isnull=True)
+            mock_qs_perdidas_base # Llamada 4: .filter(finalizada=True)
+        ]
+
+        response = view.get(request_mock)
+
+        # Aserciones de datos
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["Total partidas jugadas"] == 10
+        assert response.data["Total partidas ganadas"] == 5
+        assert response.data["Total partidas empatadas"] == 2
+        assert response.data["Total partidas perdidas"] == 3
+
+        # Verificaciones de llamadas específicas
+        mock_qs_principal.filter.assert_any_call(ganador=request_mock.user)
+        mock_qs_principal.filter.assert_any_call(finalizada=True, ganador__isnull=True)
+        
+        # Verificación de la cadena de "perdidas"
+        mock_qs_exclude_1.exclude.assert_called_with(ganador__isnull=True)
+        mock_qs_exclude_2.count.assert_called_once()
