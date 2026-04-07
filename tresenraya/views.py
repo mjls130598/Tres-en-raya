@@ -489,3 +489,45 @@ class UltimoMovimientoView(APIView):
                 "movimiento": ultimo_movimiento_datos
             }
         )
+    
+class RankingView(APIView):
+    """
+    Visualización de un resumen de las partidas de un usuario.
+    En ella se muestra:
+    * Total de partidas jugadas.
+    * Total de partidas ganadas.
+    * Total de partidas empatadas.
+    * Total de partidas perdidas.
+    """
+
+    def get(self, request):
+
+        # 1. Recogemos todas las partidas de un usuario
+        partidas_usuario = Partida.objects.filter(jugador__usuario=request.user)
+        total_jugadas = partidas_usuario.count()
+
+        # 2. Obtenemos las partidas ganadas de un usuario
+        partidas_ganadas = partidas_usuario.filter(ganador=request.user)
+        total_ganadas = partidas_ganadas.count()
+
+        # 3. Sacamos las partidas empatadas de un usuario
+        partidas_empatadas = partidas_usuario.filter(finalizada=True, ganador__isnull=True)
+        total_empatadas = partidas_empatadas.count()
+
+        # 4. Recolectamos las partidas perdidas de un usuario
+        # HINT: Se podría recoger restando el total con la suma de ganadas y empatadas
+        partidas_perdidas = partidas_usuario. \
+            filter(finalizada=True). \
+            exclude(ganador=request.user). \
+            exclude(ganador__isnull=True)
+        total_perdidas = partidas_perdidas.count()
+
+        return Response(
+            {
+                "Total partidas jugadas":   total_jugadas,
+                "Total partidas ganadas":   total_ganadas,
+                "Total partidas empatadas": total_empatadas,
+                "Total partidas perdidas":  total_perdidas
+            },
+            status=status.HTTP_200_OK
+        )
