@@ -118,7 +118,6 @@ class ListarPartidasView(APIView):
         
         if finalizada_param is not None:
             finalizada_param = finalizada_param.lower()
-            print(finalizada_param)
             if finalizada_param != "true" and finalizada_param != "false":
                 return Response({
                     "Error": "El parámetro 'finalizada' debe ser 'true' o 'false'"
@@ -137,7 +136,7 @@ class ListarPartidasView(APIView):
                     {"Error": "El oponente dado no existe"},
                     status=status.HTTP_404_NOT_FOUND) 
            
-            partidas_usuario = partidas_usuario.filter(jugador__usuario=oponente)
+            partidas_usuario = partidas_usuario.filter(jugador__usuario=oponente).distinct()
 
         return Response(PartidaListadoSerializer(partidas_usuario, many=True).data)
 
