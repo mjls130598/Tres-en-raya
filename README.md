@@ -2,6 +2,15 @@
 
 **Tres en raya** es una implementación backend del juego clásico **Tic-Tac-Toe**, creada como parte de una entrevista técnica para desarrollador en **Phicus**. El proyecto está hecho en Django y Django REST Framework, y muestra cómo gestionar partidas, jugadores, movimientos y el estado del tablero mediante una API REST.
 
+## Índice
+
+- [Base de datos](#base-de-datos)
+- [Herramientas](#herramientas)
+- [Estructura](#estructura)
+- [Cómo ejecutarlo](#cómo-ejecutarlo)
+- [Endpoints](#endpoints)
+- [Mejora futura](#mejora-futura)
+
 ## Base de datos
 
 La aplicación usa el ORM de Django con un modelo relacional que captura el estado completo de una partida.
